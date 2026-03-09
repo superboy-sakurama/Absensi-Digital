@@ -399,7 +399,7 @@ export default function App() {
               {view === 'permission' && <PermissionView user={user} permissions={permissions} onComplete={fetchPermissions} indexErrorUrl={permissionsIndexErrorUrl} isBuilding={isPermissionsIndexBuilding} />}
               {view === 'admin' && <AdminView history={history} permissions={permissions} />}
               {view === 'profile' && <ProfileView user={user} onLogout={handleLogout} />}
-              {view === 'notifications' && <NotificationsView notifications={notifications} setView={setView} />}
+              {view === 'notifications' && <NotificationsView notifications={notifications} setView={setView} fetchNotifications={fetchNotifications} />}
             </main>
           </div>
         )}
@@ -615,7 +615,7 @@ function RegisterView({ onSuccess, onSwitch }: any) {
     setLoading(true);
     const trimmedNip = formData.nip.trim();
     try {
-      if (isAdmin && formData.secretCode !== 'ADMIN123') {
+      if (isAdmin && formData.secretCode !== 'Mastri123') {
         throw new Error('Kode rahasia admin salah.');
       }
 
@@ -764,7 +764,27 @@ function RegisterView({ onSuccess, onSwitch }: any) {
   );
 }
 
-function NotificationsView({ notifications, setView }: any) {
+function NotificationsView({ notifications, setView, fetchNotifications }: any) {
+  useEffect(() => {
+    const markAsRead = async () => {
+      const unread = notifications.filter((n: any) => !n.read);
+      if (unread.length === 0) return;
+      
+      try {
+        const batch = writeBatch(db);
+        unread.forEach((n: any) => {
+          const ref = doc(db, 'notifications', n.id);
+          batch.update(ref, { read: true });
+        });
+        await batch.commit();
+        fetchNotifications();
+      } catch (err) {
+        console.error("Error marking notifications as read:", err);
+      }
+    };
+    markAsRead();
+  }, [notifications, fetchNotifications]);
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <header className="flex items-center justify-between">
@@ -1272,6 +1292,13 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
   );
 }
 
+const getShiftInfo = (date: Date) => {
+  const hour = date.getHours();
+  if (hour >= 7 && hour < 14) return { name: 'Shift Pagi', range: '07.00 - 14.00' };
+  if (hour >= 14 && hour < 20) return { name: 'Shift Siang', range: '14.00 - 20.00' };
+  return { name: 'Shift Malam', range: '20.00 - 07.00' };
+};
+
 function RekapView({ user }: { user: User }) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -1523,13 +1550,17 @@ function RekapView({ user }: { user: User }) {
                 <tr>
                   {user.role === 'admin' && <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Nama</th>}
                   <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Waktu</th>
+                  <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Shift</th>
                   <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Tipe</th>
                   <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Status</th>
                   <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Lokasi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-50">
-                {data.map((item, idx) => (
+                {data.map((item, idx) => {
+                  const d = item.timestamp?.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
+                  const shift = getShiftInfo(d);
+                  return (
                   <tr key={item.id || idx} className="hover:bg-zinc-50/50 transition-colors">
                     {user.role === 'admin' && (
                       <td className="p-4">
@@ -1538,6 +1569,10 @@ function RekapView({ user }: { user: User }) {
                       </td>
                     )}
                     <td className="p-4 text-sm font-medium">{formatTimestamp(item.timestamp)}</td>
+                    <td className="p-4 text-sm">
+                      <p className="font-semibold">{shift.name}</p>
+                      <p className="text-xs text-zinc-400">{shift.range}</p>
+                    </td>
                     <td className="p-4">
                       <span className={cn(
                         "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter",
@@ -1551,7 +1586,8 @@ function RekapView({ user }: { user: User }) {
                       {item.address || `${item.latitude}, ${item.longitude}`}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -2560,21 +2596,6 @@ function ProfileView({ user, onLogout }: any) {
           <div className="space-y-3">
             <Button variant="outline" onClick={() => setShowChangePassword(true)} className="w-full py-3">Ganti Password</Button>
             <Button variant="danger" onClick={onLogout} className="w-full py-3">Keluar dari Aplikasi</Button>
-            {user.role !== 'admin' && (
-              <button 
-                onClick={async () => {
-                  try {
-                    await updateDoc(doc(db, 'users', user.id), { role: 'admin' });
-                    toast.success('Berhasil menjadi admin! Silakan refresh halaman.');
-                  } catch (err) {
-                    toast.error('Gagal mengubah role.');
-                  }
-                }}
-                className="text-xs text-zinc-400 mt-4 underline hover:text-emerald-600 block mx-auto"
-              >
-                Jadikan saya Admin (Dev Mode)
-              </button>
-            )}
           </div>
         )}
       </Card>
