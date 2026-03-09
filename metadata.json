@@ -1,0 +1,8 @@
+{
+  "name": "Si Abon Elite",
+  "description": "Aplikasi absensi berbasis lokasi GPS dan kamera dengan fitur rekapitulasi untuk admin.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
