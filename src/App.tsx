@@ -1469,7 +1469,7 @@ function RekapView({ user }: { user: User }) {
         NIP: item.nip || '-',
         Tanggal: formatTimestamp(item.timestamp),
         Tipe: item.type,
-        Status: item.status,
+        Status: item.type === 'Pulang' ? 'Pulang' : item.status,
         Lokasi: item.address || `${item.latitude}, ${item.longitude}`
       }));
 
@@ -1576,12 +1576,12 @@ function RekapView({ user }: { user: User }) {
                     <td className="p-4">
                       <span className={cn(
                         "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter",
-                        item.type === 'Masuk' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'
+                        item.type === 'Masuk' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
                       )}>
                         {item.type}
                       </span>
                     </td>
-                    <td className="p-4 text-sm text-zinc-600">{item.status}</td>
+                    <td className="p-4 text-sm text-zinc-600">{item.type === 'Pulang' ? 'Pulang' : item.status}</td>
                     <td className="p-4 text-xs text-zinc-500 max-w-[200px] truncate" title={item.address}>
                       {item.address || `${item.latitude}, ${item.longitude}`}
                     </td>
