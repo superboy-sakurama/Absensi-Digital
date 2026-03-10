@@ -1130,7 +1130,7 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         await uploadString(photoRef, photo, 'data_url');
         photoUrl = await getDownloadURL(photoRef);
       } catch (storageErr: any) {
-        console.error("Storage upload error:", storageErr);
+        console.warn("Storage upload error:", storageErr);
         if (storageErr.code === 'storage/unauthorized') {
           throw new Error('Gagal mengunggah foto: Izin ditolak. Periksa Firebase Storage Rules.');
         }
@@ -1138,12 +1138,11 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         if (storageErr.code === 'storage/retry-limit-exceeded') {
           console.warn("Storage retry limit exceeded, falling back to base64");
           photoUrl = photo;
-          return;
+        } else {
+          // Fallback: Use base64 string directly if storage fails
+          console.warn("Falling back to base64 photo due to storage error");
+          photoUrl = photo;
         }
-        
-        // Fallback: Use base64 string directly if storage fails
-        console.warn("Falling back to base64 photo due to storage error");
-        photoUrl = photo;
       }
 
       // 2. Save attendance to Firestore
@@ -1851,7 +1850,7 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
         await uploadString(photoRef, photo, 'data_url');
         photoUrl = await getDownloadURL(photoRef);
       } catch (storageErr: any) {
-        console.error("Storage upload error:", storageErr);
+        console.warn("Storage upload error:", storageErr);
         if (storageErr.code === 'storage/unauthorized') {
           throw new Error('Gagal mengunggah foto: Izin ditolak. Periksa Firebase Storage Rules.');
         }
@@ -1859,12 +1858,11 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
         if (storageErr.code === 'storage/retry-limit-exceeded') {
           console.warn("Storage retry limit exceeded, falling back to base64");
           photoUrl = photo;
-          return;
+        } else {
+          // Fallback: Use base64 string directly if storage fails
+          console.warn("Falling back to base64 photo due to storage error");
+          photoUrl = photo;
         }
-        
-        // Fallback: Use base64 string directly if storage fails
-        console.warn("Falling back to base64 photo due to storage error");
-        photoUrl = photo;
       }
 
       const batch = writeBatch(db);
