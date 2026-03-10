@@ -55,6 +55,7 @@ import {
   Timestamp,
   serverTimestamp
 } from 'firebase/firestore';
+import AdminDashboard from './components/AdminDashboard';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 
 // --- Components ---
@@ -74,7 +75,7 @@ const Button = ({ className, variant = 'primary', ...props }: any) => {
   );
 };
 
-const Card = ({ children, className }: any) => (
+export const Card = ({ children, className }: any) => (
   <div className={cn('bg-white rounded-2xl border border-zinc-100 shadow-sm p-6', className)}>
     {children}
   </div>
@@ -2118,7 +2119,7 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
 }
 
 function AdminView({ history, permissions }: any) {
-  const [activeTab, setActiveTab] = useState<'attendance' | 'permissions' | 'branches' | 'settings'>('attendance');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'permissions' | 'branches' | 'settings'>('dashboard');
   const [exportDate, setExportDate] = useState(new Date().toISOString().split('T')[0]);
   const [exportMonth, setExportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [branches, setBranches] = useState<any[]>([]);
@@ -2261,7 +2262,7 @@ function AdminView({ history, permissions }: any) {
           <p className="text-zinc-500 font-medium">Kelola seluruh aktivitas pegawai</p>
         </div>
         <div className="flex bg-zinc-100 p-1 rounded-xl">
-          {(['attendance', 'permissions', 'branches', 'settings'] as const).map(tab => (
+          {(['dashboard', 'attendance', 'permissions', 'branches', 'settings'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -2276,7 +2277,9 @@ function AdminView({ history, permissions }: any) {
         </div>
       </div>
 
-      {activeTab === 'settings' ? (
+      {activeTab === 'dashboard' ? (
+        <AdminDashboard attendanceData={history} />
+      ) : activeTab === 'settings' ? (
         <div className="space-y-6">
           <Card className="space-y-4">
             <h3 className="font-bold text-lg">Integrasi Google Spreadsheet</h3>
