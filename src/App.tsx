@@ -1128,6 +1128,12 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
           throw new Error('Gagal mengunggah foto: Izin ditolak. Periksa Firebase Storage Rules.');
         }
         
+        if (storageErr.code === 'storage/retry-limit-exceeded') {
+          console.warn("Storage retry limit exceeded, falling back to base64");
+          photoUrl = photo;
+          return;
+        }
+        
         // Fallback: Use base64 string directly if storage fails
         console.warn("Falling back to base64 photo due to storage error");
         photoUrl = photo;
@@ -1841,6 +1847,12 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
         console.error("Storage upload error:", storageErr);
         if (storageErr.code === 'storage/unauthorized') {
           throw new Error('Gagal mengunggah foto: Izin ditolak. Periksa Firebase Storage Rules.');
+        }
+        
+        if (storageErr.code === 'storage/retry-limit-exceeded') {
+          console.warn("Storage retry limit exceeded, falling back to base64");
+          photoUrl = photo;
+          return;
         }
         
         // Fallback: Use base64 string directly if storage fails
