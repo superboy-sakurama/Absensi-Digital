@@ -91,6 +91,7 @@ const formatTimestamp = (ts: any) => {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
   const [view, setView] = useState<'login' | 'register' | 'dashboard' | 'attendance' | 'history' | 'admin' | 'permission' | 'profile' | 'forgot-password' | 'rekap' | 'notifications'>('login');
   const [history, setHistory] = useState<Attendance[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
@@ -111,6 +112,12 @@ export default function App() {
             const userData = userDoc.data() as User;
             setUser({ ...userData, id: firebaseUser.uid as any });
             setView('dashboard');
+            
+            if (userData.role === 'admin') {
+              const q = query(collection(db, 'users'), orderBy('name', 'asc'));
+              const snapshot = await getDocs(q);
+              setUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as User)));
+            }
           } else {
             // User exists in Auth but not in Firestore
             // This can happen if registration was interrupted
@@ -398,7 +405,7 @@ export default function App() {
               {view === 'rekap' && <RekapView user={user} />}
               {view === 'history' && <HistoryView history={history} indexErrorUrl={indexErrorUrl} isBuilding={isIndexBuilding} />}
               {view === 'permission' && <PermissionView user={user} permissions={permissions} onComplete={fetchPermissions} indexErrorUrl={permissionsIndexErrorUrl} isBuilding={isPermissionsIndexBuilding} />}
-              {view === 'admin' && <AdminView history={history} permissions={permissions} />}
+              {view === 'admin' && <AdminView history={history} permissions={permissions} users={users} />}
               {view === 'profile' && <ProfileView user={user} onLogout={handleLogout} />}
               {view === 'notifications' && <NotificationsView notifications={notifications} setView={setView} fetchNotifications={fetchNotifications} />}
             </main>
@@ -2130,7 +2137,7 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
   );
 }
 
-function AdminView({ history, permissions }: any) {
+function AdminView({ history, permissions, users }: any) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'permissions' | 'branches' | 'settings'>('dashboard');
   const [exportDate, setExportDate] = useState(new Date().toISOString().split('T')[0]);
   const [exportMonth, setExportMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -2290,7 +2297,7 @@ function AdminView({ history, permissions }: any) {
       </div>
 
       {activeTab === 'dashboard' ? (
-        <AdminDashboard attendanceData={history} />
+        <AdminDashboard attendanceData={history} users={users} />
       ) : activeTab === 'settings' ? (
         <div className="space-y-6">
           <Card className="space-y-4">
