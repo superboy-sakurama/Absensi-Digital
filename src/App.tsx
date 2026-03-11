@@ -147,6 +147,77 @@ export default function App() {
     };
   }, []);
 
+  // Shift end notification
+  useEffect(() => {
+    if (!user || user.role === 'admin') return;
+
+    const checkShiftEnd = async () => {
+      const now = new Date();
+      // Check if it's past 16:00 (4 PM)
+      if (now.getHours() >= 16) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        try {
+          // Check if checked in today
+          const qMasuk = query(
+            collection(db, 'attendance'),
+            where('user_id', '==', user.id),
+            where('type', '==', 'Masuk'),
+            where('timestamp', '>=', today),
+            where('timestamp', '<', tomorrow)
+          );
+          const snapshotMasuk = await getDocs(qMasuk);
+
+          if (!snapshotMasuk.empty) {
+            // Check if already checked out
+            const qPulang = query(
+              collection(db, 'attendance'),
+              where('user_id', '==', user.id),
+              where('type', '==', 'Pulang'),
+              where('timestamp', '>=', today),
+              where('timestamp', '<', tomorrow)
+            );
+            const snapshotPulang = await getDocs(qPulang);
+
+            if (snapshotPulang.empty) {
+              // Check if we already notified today
+              const lastNotified = localStorage.getItem(`shift_notified_${today.toISOString()}`);
+              if (!lastNotified) {
+                toast('Waktu shift Anda sudah berakhir. Silakan lakukan absensi pulang.', {
+                  icon: '⏰',
+                  duration: 8000,
+                  style: {
+                    borderRadius: '10px',
+                    background: '#333',
+                    color: '#fff',
+                  },
+                });
+                // Play alarm sound
+                try {
+                  const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                  audio.play().catch(e => console.log("Audio play failed:", e));
+                } catch (e) {}
+                
+                localStorage.setItem(`shift_notified_${today.toISOString()}`, 'true');
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error checking shift end:", err);
+        }
+      }
+    };
+
+    // Check immediately and then every 5 minutes
+    checkShiftEnd();
+    const intervalId = setInterval(checkShiftEnd, 5 * 60 * 1000);
+
+    return () => clearInterval(intervalId);
+  }, [user]);
+
   // Auth check
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -1180,6 +1251,34 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       return;
     }
 
+    setLoading(true);
+
+    try {
+      if (type === 'Masuk') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const qMasuk = query(
+          collection(db, 'attendance'),
+          where('user_id', '==', user.id),
+          where('type', '==', 'Masuk'),
+          where('timestamp', '>=', today),
+          where('timestamp', '<', tomorrow)
+        );
+        
+        const snapshotMasuk = await getDocs(qMasuk);
+        if (!snapshotMasuk.empty) {
+          toast.error('Anda sudah melakukan absensi pada periode shift saat ini, silahkan absensi pulang terlebih dulu');
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.error("Error checking previous attendance:", err);
+    }
+
     // Validasi lokasi berdasarkan nama desa (hanya untuk absensi masuk)
     if (type === 'Masuk') {
       console.log("Validating location for Masuk");
@@ -1207,6 +1306,7 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       console.log("Is within range:", isWithinRange);
 
       if (!isWithinRange) {
+        setLoading(false);
         toast.error('Anda tidak sedang berada di wilayah kerja anda. Mengalihkan ke menu izin...', { duration: 4000 });
         setTimeout(() => {
           setView('permission');
@@ -1214,8 +1314,6 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         return;
       }
     }
-
-    setLoading(true);
 
     if (!navigator.onLine) {
       setLoading(false);
