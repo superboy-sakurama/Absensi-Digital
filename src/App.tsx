@@ -161,48 +161,38 @@ export default function App() {
         tomorrow.setDate(tomorrow.getDate() + 1);
 
         try {
-          // Check if checked in today
-          const qMasuk = query(
+          // Fetch today's attendance records
+          const qToday = query(
             collection(db, 'attendance'),
             where('user_id', '==', user.id),
-            where('type', '==', 'Masuk'),
             where('timestamp', '>=', today),
             where('timestamp', '<', tomorrow)
           );
-          const snapshotMasuk = await getDocs(qMasuk);
+          const snapshotToday = await getDocs(qToday);
+          
+          const hasMasuk = snapshotToday.docs.some(doc => doc.data().type === 'Masuk');
+          const hasPulang = snapshotToday.docs.some(doc => doc.data().type === 'Pulang');
 
-          if (!snapshotMasuk.empty) {
-            // Check if already checked out
-            const qPulang = query(
-              collection(db, 'attendance'),
-              where('user_id', '==', user.id),
-              where('type', '==', 'Pulang'),
-              where('timestamp', '>=', today),
-              where('timestamp', '<', tomorrow)
-            );
-            const snapshotPulang = await getDocs(qPulang);
-
-            if (snapshotPulang.empty) {
-              // Check if we already notified today
-              const lastNotified = localStorage.getItem(`shift_notified_${today.toISOString()}`);
-              if (!lastNotified) {
-                toast('Waktu shift Anda sudah berakhir. Silakan lakukan absensi pulang.', {
-                  icon: '⏰',
-                  duration: 8000,
-                  style: {
-                    borderRadius: '10px',
-                    background: '#333',
-                    color: '#fff',
-                  },
-                });
-                // Play alarm sound
-                try {
-                  const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-                  audio.play().catch(e => console.log("Audio play failed:", e));
-                } catch (e) {}
-                
-                localStorage.setItem(`shift_notified_${today.toISOString()}`, 'true');
-              }
+          if (hasMasuk && !hasPulang) {
+            // Check if we already notified today
+            const lastNotified = localStorage.getItem(`shift_notified_${today.toISOString()}`);
+            if (!lastNotified) {
+              toast('Waktu shift Anda sudah berakhir. Silakan lakukan absensi pulang.', {
+                icon: '⏰',
+                duration: 8000,
+                style: {
+                  borderRadius: '10px',
+                  background: '#333',
+                  color: '#fff',
+                },
+              });
+              // Play alarm sound
+              try {
+                const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                audio.play().catch(e => console.log("Audio play failed:", e));
+              } catch (e) {}
+              
+              localStorage.setItem(`shift_notified_${today.toISOString()}`, 'true');
             }
           }
         } catch (err) {
@@ -1260,16 +1250,17 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
 
-        const qMasuk = query(
+        const qToday = query(
           collection(db, 'attendance'),
           where('user_id', '==', user.id),
-          where('type', '==', 'Masuk'),
           where('timestamp', '>=', today),
           where('timestamp', '<', tomorrow)
         );
         
-        const snapshotMasuk = await getDocs(qMasuk);
-        if (!snapshotMasuk.empty) {
+        const snapshotToday = await getDocs(qToday);
+        const hasMasuk = snapshotToday.docs.some(doc => doc.data().type === 'Masuk');
+        
+        if (hasMasuk) {
           toast.error('Anda sudah melakukan absensi pada periode shift saat ini, silahkan absensi pulang terlebih dulu');
           setLoading(false);
           return;
