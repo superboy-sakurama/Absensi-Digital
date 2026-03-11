@@ -340,6 +340,7 @@ export default function App() {
           <LoginView 
             onSwitch={() => setView('register')} 
             onForgot={() => setView('forgot-password')}
+            setView={setView}
           />
         )}
         
@@ -441,7 +442,7 @@ function MobileNavItem({ active, onClick, icon }: any) {
   );
 }
 
-function LoginView({ onSwitch, onForgot }: any) {
+function LoginView({ onSwitch, onForgot, setView }: any) {
   const [nip, setNip] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -464,6 +465,7 @@ function LoginView({ onSwitch, onForgot }: any) {
 
       await signInWithEmailAndPassword(auth, email, password);
       toast.success('Selamat datang kembali!');
+      setView('dashboard');
     } catch (err: any) {
       console.error("Login error:", err);
       if (err.code === 'permission-denied' || err.message?.includes('permissions')) {
@@ -1091,19 +1093,39 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       return;
     }
 
-    // Validasi lokasi berdasarkan nama desa
-    const isWithinRange = branches.some(branch => {
-      if (!branch.name || !address) return false;
-      return address.toLowerCase().includes(branch.name.toLowerCase());
-    }) || (address && address.toLowerCase().includes('dibee'))
-       || (user.village && address && address.toLowerCase().includes(user.village.toLowerCase()));
+    // Validasi lokasi berdasarkan nama desa (hanya untuk absensi masuk)
+    if (type === 'Masuk') {
+      console.log("Validating location for Masuk");
+      console.log("Address:", address);
+      console.log("User Village:", user.village);
+      console.log("Branches:", branches);
 
-    if (!isWithinRange) {
-      toast.error('Anda tidak berada di lokasi desa yang diizinkan. Mengalihkan ke menu izin/dinas luar...', { duration: 4000 });
-      setTimeout(() => {
-        setView('permission');
-      }, 2000);
-      return;
+      // Check if user is in any branch
+      const isAtBranch = branches.some(branch => {
+        if (!branch.name || !address) return false;
+        return address.toLowerCase().includes(branch.name.toLowerCase());
+      });
+
+      // Check if user is in their registered village
+      const isAtVillage = user.village && address && address.toLowerCase().includes(user.village.toLowerCase());
+      
+      // Check for 'dibee' (special case)
+      const isAtDibee = address && address.toLowerCase().includes('dibee');
+
+      const isWithinRange = isAtBranch || isAtVillage || isAtDibee;
+
+      console.log("Is at branch:", isAtBranch);
+      console.log("Is at village:", isAtVillage);
+      console.log("Is at dibee:", isAtDibee);
+      console.log("Is within range:", isWithinRange);
+
+      if (!isWithinRange) {
+        toast.error('Anda tidak sedang berada di wilayah kerja anda. Mengalihkan ke menu izin...', { duration: 4000 });
+        setTimeout(() => {
+          setView('permission');
+        }, 2000);
+        return;
+      }
     }
 
     setLoading(true);

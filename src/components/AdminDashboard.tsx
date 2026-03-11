@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polygon } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polygon, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { db } from '../lib/firebase';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
@@ -30,11 +30,20 @@ const yellowIcon = new L.Icon({
   popupAnchor: [1, -34],
 });
 
+function MapUpdater({ center }: { center: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, 15);
+  }, [center, map]);
+  return null;
+}
+
 export default function AdminDashboard({ attendanceData, users }: { attendanceData: Attendance[], users: User[] }) {
   const [stats, setStats] = useState({ masuk: 0, dinasLuar: 0, sakit: 0, cuti: 0 });
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userAttendance, setUserAttendance] = useState<Attendance[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [mapCenter, setMapCenter] = useState<[number, number]>([-7.115, 112.415]);
 
   const fetchUserAttendance = async (userId: string) => {
     const q = query(collection(db, 'attendance'), where('user_id', '==', userId), orderBy('timestamp', 'desc'), limit(10));
@@ -141,7 +150,8 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
       </div>
 
       <div className="h-96 w-full rounded-2xl overflow-hidden border border-zinc-200">
-        <MapContainer center={[-6.2000, 106.8166]} zoom={15} className="h-full w-full">
+        <MapContainer center={mapCenter} zoom={15} className="h-full w-full">
+          <MapUpdater center={mapCenter} />
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <Polygon positions={villagePolygon} color="blue" />
           {attendanceData.map((item, idx) => (
@@ -166,7 +176,7 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
         <h3 className="text-lg font-bold mb-4">Aktivitas Terbaru</h3>
         <div className="space-y-4">
           {attendanceData.slice(0, 5).map((item, idx) => (
-            <div key={idx} className="flex justify-between items-center border-b pb-2">
+            <div key={idx} className="flex justify-between items-center border-b pb-2 cursor-pointer hover:bg-zinc-50" onClick={() => setMapCenter([item.latitude, item.longitude])}>
               <div>
                 <p className="font-bold">{item.name}</p>
                 <p className="text-sm text-zinc-500">{item.status}</p>
