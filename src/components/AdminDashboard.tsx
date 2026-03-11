@@ -60,16 +60,51 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
     XLSX.writeFile(wb, "Attendance.xlsx");
   };
 
-  const exportUserToExcel = () => {
-    // Logic for custom date range export
-    const filtered = userAttendance.filter(a => {
-      const date = new Date(a.timestamp.toDate()).toLocaleDateString();
-      return date >= dateRange.start && date <= dateRange.end;
-    });
-    const ws = XLSX.utils.json_to_sheet(filtered);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "UserAttendance");
-    XLSX.writeFile(wb, `Attendance_${selectedUser?.name}.xlsx`);
+  const exportUserToExcel = async () => {
+    if (!selectedUser) return;
+    if (!dateRange.start || !dateRange.end) {
+      toast.error('Pilih rentang tanggal terlebih dahulu');
+      return;
+    }
+
+    try {
+      const start = new Date(dateRange.start);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(dateRange.end);
+      end.setHours(23, 59, 59, 999);
+
+      const q = query(
+        collection(db, 'attendance'),
+        where('user_id', '==', selectedUser.id),
+        where('timestamp', '>=', start),
+        where('timestamp', '<=', end),
+        orderBy('timestamp', 'desc')
+      );
+
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map(d => {
+        const docData = d.data();
+        return {
+          Tanggal: new Date(docData.timestamp.toDate()).toLocaleString('id-ID'),
+          Status: docData.status,
+          Lokasi: docData.location ? `${docData.location.lat}, ${docData.location.lng}` : '-',
+          Catatan: docData.notes || '-'
+        };
+      });
+
+      if (data.length === 0) {
+        toast.error('Tidak ada data pada rentang tanggal tersebut');
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Riwayat Absensi");
+      XLSX.writeFile(wb, `Absensi_${selectedUser.name}_${dateRange.start}_to_${dateRange.end}.xlsx`);
+    } catch (error) {
+      console.error("Error exporting data:", error);
+      toast.error('Gagal mengekspor data');
+    }
   };
 
   const resetDevice = async () => {
