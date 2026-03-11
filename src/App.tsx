@@ -58,6 +58,19 @@ import {
 import AdminDashboard from './components/AdminDashboard';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 
+const getDeviceId = () => {
+  let deviceId = localStorage.getItem('deviceId');
+  if (!deviceId) {
+    deviceId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('deviceId', deviceId);
+  }
+  return deviceId;
+};
+
+const getDeviceInfo = () => {
+  return navigator.userAgent;
+};
+
 // --- Components ---
 
 const Button = ({ className, variant = 'primary', ...props }: any) => {
@@ -101,6 +114,38 @@ export default function App() {
   const [isIndexBuilding, setIsIndexBuilding] = useState(false);
   const [isPermissionsIndexBuilding, setIsPermissionsIndexBuilding] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Auto-logout after 10 hours of inactivity
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      // 10 hours in milliseconds
+      timeoutId = setTimeout(() => {
+        if (auth.currentUser) {
+          signOut(auth);
+          toast.error('Sesi Anda telah berakhir karena tidak ada aktivitas selama 10 jam.');
+        }
+      }, 10 * 60 * 60 * 1000);
+    };
+
+    // Initialize timer
+    resetTimer();
+
+    // Add event listeners
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    events.forEach(event => {
+      document.addEventListener(event, resetTimer);
+    });
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach(event => {
+        document.removeEventListener(event, resetTimer);
+      });
+    };
+  }, []);
 
   // Auth check
   useEffect(() => {
@@ -461,9 +506,30 @@ function LoginView({ onSwitch, onForgot, setView }: any) {
       }
 
       const userDoc = querySnapshot.docs[0];
-      const email = userDoc.data().email;
+      const userData = userDoc.data();
+      const email = userData.email;
+
+      // Check status
+      if (userData.status === 'pending') {
+        throw new Error('Akun Anda sedang menunggu persetujuan admin.');
+      }
+
+      // Check device binding
+      const currentDeviceId = getDeviceId();
+      if (userData.deviceId && userData.deviceId !== currentDeviceId && userData.role !== 'admin') {
+        throw new Error('Akun ini sudah terikat dengan perangkat lain. Hubungi admin untuk mereset perangkat.');
+      }
 
       await signInWithEmailAndPassword(auth, email, password);
+      
+      // Update deviceId if not set
+      if (!userData.deviceId && userData.role !== 'admin') {
+        await updateDoc(doc(db, 'users', userDoc.id), {
+          deviceId: currentDeviceId,
+          deviceInfo: getDeviceInfo()
+        });
+      }
+
       toast.success('Selamat datang kembali!');
       setView('dashboard');
     } catch (err: any) {
@@ -636,6 +702,24 @@ function RegisterView({ onSuccess, onSwitch }: any) {
         throw new Error('NIP sudah terdaftar. Gunakan NIP lain atau hubungi admin.');
       }
 
+      // Check for similar names
+      const allUsersSnapshot = await getDocs(collection(db, 'users'));
+      const newNameLower = formData.name.toLowerCase().replace(/\s+/g, '');
+      let isSimilar = false;
+      
+      allUsersSnapshot.forEach(doc => {
+        const existingName = doc.data().name.toLowerCase().replace(/\s+/g, '');
+        if (existingName === newNameLower || 
+            (existingName.includes(newNameLower) && existingName.length - newNameLower.length < 3) ||
+            (newNameLower.includes(existingName) && newNameLower.length - existingName.length < 3)) {
+          isSimilar = true;
+        }
+      });
+
+      if (isSimilar && !isAdmin) {
+        throw new Error('Nama yang mirip sudah terdaftar. Silakan hubungi admin untuk mendaftar.');
+      }
+
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
       const user = userCredential.user;
       
@@ -647,6 +731,9 @@ function RegisterView({ onSuccess, onSwitch }: any) {
           name: formData.name,
           role: isAdmin ? 'admin' : 'user',
           village: formData.village.trim(),
+          deviceId: getDeviceId(),
+          deviceInfo: getDeviceInfo(),
+          status: 'active',
           createdAt: serverTimestamp()
         });
       } catch (firestoreErr: any) {

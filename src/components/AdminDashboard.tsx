@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polygon, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { db } from '../lib/firebase';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import { Attendance, User } from '../types';
 import { Card } from '../App';
@@ -71,6 +72,22 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
     XLSX.writeFile(wb, `Attendance_${selectedUser?.name}.xlsx`);
   };
 
+  const resetDevice = async () => {
+    if (!selectedUser) return;
+    if (window.confirm(`Reset perangkat untuk ${selectedUser.name}?`)) {
+      try {
+        await updateDoc(doc(db, 'users', selectedUser.id), {
+          deviceId: null,
+          deviceInfo: null
+        });
+        toast.success(`Perangkat untuk ${selectedUser.name} berhasil direset.`);
+      } catch (err) {
+        console.error("Error resetting device:", err);
+        toast.error('Gagal mereset perangkat.');
+      }
+    }
+  };
+
   useEffect(() => {
     const newStats = { masuk: 0, dinasLuar: 0, sakit: 0, cuti: 0 };
     attendanceData.forEach(item => {
@@ -111,7 +128,12 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
         <div className="space-y-6">
           {selectedUser ? (
             <Card>
-              <h3 className="text-lg font-bold mb-4">Detail {selectedUser.name}</h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold">Detail {selectedUser.name}</h3>
+                <button onClick={resetDevice} className="bg-red-500 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-red-600">
+                  Reset Perangkat
+                </button>
+              </div>
               <div className="space-y-2">
                 {userAttendance.map(a => (
                   <div key={a.id} className="flex justify-between text-sm">

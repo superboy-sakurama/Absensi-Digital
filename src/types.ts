@@ -5,6 +5,9 @@ export interface User {
   name: string;
   role: 'admin' | 'user';
   village?: string;
+  deviceId?: string;
+  deviceInfo?: string;
+  status?: 'active' | 'pending';
 }
 
 export interface Branch {
