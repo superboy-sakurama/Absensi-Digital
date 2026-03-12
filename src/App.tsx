@@ -563,7 +563,7 @@ function LoginView({ onSwitch, onForgot, setView }: any) {
       const querySnapshot = await getDocs(q);
       
       if (querySnapshot.empty) {
-        throw new Error('NIP tidak ditemukan. Pastikan NIP Anda benar.');
+        throw new Error('NIP anda belum terdaftar silahkan lakukan pendaftaran.');
       }
 
       const userDoc = querySnapshot.docs[0];
@@ -581,7 +581,17 @@ function LoginView({ onSwitch, onForgot, setView }: any) {
         throw new Error('Akun ini sudah terikat dengan perangkat lain. Hubungi admin untuk mereset perangkat.');
       }
 
-      await signInWithEmailAndPassword(auth, email, password);
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
+          throw new Error('Password salah.');
+        } else if (authErr.code === 'auth/user-not-found') {
+          throw new Error('NIP anda belum terdaftar silahkan lakukan pendaftaran.');
+        } else {
+          throw new Error('Gagal masuk. Periksa NIP dan password Anda.');
+        }
+      }
       
       // Update deviceId if not set
       if (!userData.deviceId && userData.role !== 'admin') {
@@ -675,7 +685,7 @@ function ForgotPasswordView({ onSuccess, onBack }: any) {
       const querySnapshot = await getDocs(q);
       
       if (querySnapshot.empty) {
-        throw new Error('NIP tidak ditemukan. Pastikan NIP Anda benar.');
+        throw new Error('NIP anda belum terdaftar silahkan lakukan pendaftaran.');
       }
 
       const userDoc = querySnapshot.docs[0];
@@ -685,13 +695,32 @@ function ForgotPasswordView({ onSuccess, onBack }: any) {
         throw new Error('Email tidak ditemukan untuk NIP ini.');
       }
 
-      await sendPasswordResetEmail(auth, email);
+      const actionCodeSettings = {
+        url: window.location.origin,
+        handleCodeInApp: false
+      };
+
+      try {
+        await sendPasswordResetEmail(auth, email, actionCodeSettings);
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/user-not-found') {
+          throw new Error('NIP anda belum terdaftar silahkan lakukan pendaftaran.');
+        } else {
+          throw new Error('Gagal mengirim email reset. Silakan coba lagi nanti.');
+        }
+      }
       
       // Mask email for privacy
       const [userPart, domainPart] = email.split('@');
       const maskedEmail = userPart.substring(0, 2) + '***@' + domainPart;
       
-      toast.success(`Email reset password telah dikirim ke email terdaftar (${maskedEmail})!`, { duration: 5000 });
+      toast.success(
+        <div>
+          <p>Email reset password telah dikirim ke ({maskedEmail})!</p>
+          <p className="text-xs mt-1 opacity-80">Catatan: Jika tautan kadaluarsa, coba gunakan browser lain atau matikan pemindai email.</p>
+        </div>, 
+        { duration: 8000 }
+      );
       onSuccess();
     } catch (err: any) {
       console.error("Forgot password error:", err);
@@ -1277,23 +1306,60 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       console.log("User Village:", user.village);
       console.log("Branches:", branches);
 
-      // Check if user is in any branch
-      const isAtBranch = branches.some(branch => {
+      const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+        const R = 6371; // Radius of the earth in km
+        const dLat = (lat2 - lat1) * (Math.PI / 180);
+        const dLon = (lon2 - lon1) * (Math.PI / 180);
+        const a = 
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
+          Math.sin(dLon / 2) * Math.sin(dLon / 2); 
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
+        const d = R * c; // Distance in km
+        return d;
+      };
+
+      // Check if user is in any branch by name
+      const isAtBranchByName = branches.some(branch => {
         if (!branch.name || !address) return false;
         return address.toLowerCase().includes(branch.name.toLowerCase());
       });
 
-      // Check if user is in their registered village
-      const isAtVillage = user.village && address && address.toLowerCase().includes(user.village.toLowerCase());
+      // Check if user is in their registered village by name
+      const isAtVillageByName = user.village && address && address.toLowerCase().includes(user.village.toLowerCase());
       
       // Check for 'dibee' (special case)
       const isAtDibee = address && address.toLowerCase().includes('dibee');
 
-      const isWithinRange = isAtBranch || isAtVillage || isAtDibee;
+      // Check if user is within 1km of their assigned branch (or any branch if no village assigned)
+      let isWithinRadius = false;
+      if (location) {
+        const userBranch = branches.find(b => b.name.toLowerCase() === user.village?.toLowerCase());
+        if (userBranch) {
+          const distance = getDistanceFromLatLonInKm(location.lat, location.lng, userBranch.lat, userBranch.lng);
+          console.log(`Distance to ${userBranch.name}: ${distance} km`);
+          if (distance <= 1.5) { // 1.5 km radius
+            isWithinRadius = true;
+          }
+        } else {
+          // If no specific branch, check if within 1.5km of ANY branch
+          isWithinRadius = branches.some(branch => {
+            const distance = getDistanceFromLatLonInKm(location.lat, location.lng, branch.lat, branch.lng);
+            return distance <= 1.5;
+          });
+        }
+      }
 
-      console.log("Is at branch:", isAtBranch);
-      console.log("Is at village:", isAtVillage);
+      // Special case for Dibee users who might be detected in Sugihwaras
+      const isDibeeInSugihwaras = user.village?.toLowerCase() === 'dibee' && address?.toLowerCase().includes('sugihwaras');
+
+      const isWithinRange = isAtBranchByName || isAtVillageByName || isAtDibee || isWithinRadius || isDibeeInSugihwaras;
+
+      console.log("Is at branch by name:", isAtBranchByName);
+      console.log("Is at village by name:", isAtVillageByName);
       console.log("Is at dibee:", isAtDibee);
+      console.log("Is within radius:", isWithinRadius);
+      console.log("Is Dibee in Sugihwaras:", isDibeeInSugihwaras);
       console.log("Is within range:", isWithinRange);
 
       if (!isWithinRange) {
