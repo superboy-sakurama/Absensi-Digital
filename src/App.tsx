@@ -1319,52 +1319,56 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         return d;
       };
 
-      // Check if user is in any branch by name
-      const isAtBranchByName = branches.some(branch => {
-        if (!branch.name || !address) return false;
-        return address.toLowerCase().includes(branch.name.toLowerCase());
-      });
-
-      // Check if user is in their registered village by name
-      const isAtVillageByName = user.village && address && address.toLowerCase().includes(user.village.toLowerCase());
-      
-      // Check for 'dibee' (special case)
-      const isAtDibee = address && address.toLowerCase().includes('dibee');
-
-      // Check if user is within 1km of their assigned branch (or any branch if no village assigned)
+      // Check if user is within 50m of their assigned branch (or any branch if no village assigned)
       let isWithinRadius = false;
+      let distanceToBranch = null;
+      let hasCoordinates = true;
+
       if (location) {
         const userBranch = branches.find(b => b.name.toLowerCase() === user.village?.toLowerCase());
         if (userBranch) {
-          const distance = getDistanceFromLatLonInKm(location.lat, location.lng, userBranch.lat, userBranch.lng);
-          console.log(`Distance to ${userBranch.name}: ${distance} km`);
-          if (distance <= 1.5) { // 1.5 km radius
-            isWithinRadius = true;
+          if (userBranch.lat && userBranch.lng) {
+            distanceToBranch = getDistanceFromLatLonInKm(location.lat, location.lng, userBranch.lat, userBranch.lng);
+            console.log(`Distance to ${userBranch.name}: ${distanceToBranch} km`);
+            if (distanceToBranch <= 0.05) { // 50 meters radius
+              isWithinRadius = true;
+            }
+          } else {
+            hasCoordinates = false;
           }
         } else {
-          // If no specific branch, check if within 1.5km of ANY branch
+          // If no specific branch, check if within 50m of ANY branch
           isWithinRadius = branches.some(branch => {
+            if (!branch.lat || !branch.lng) return false;
             const distance = getDistanceFromLatLonInKm(location.lat, location.lng, branch.lat, branch.lng);
-            return distance <= 1.5;
+            return distance <= 0.05;
           });
+          
+          // If no branches have coordinates, we can't validate
+          if (branches.length > 0 && !branches.some(b => b.lat && b.lng)) {
+            hasCoordinates = false;
+          }
         }
       }
 
-      // Special case for Dibee users who might be detected in Sugihwaras
-      const isDibeeInSugihwaras = user.village?.toLowerCase() === 'dibee' && address?.toLowerCase().includes('sugihwaras');
+      console.log("Is within 50m radius:", isWithinRadius);
 
-      const isWithinRange = isAtBranchByName || isAtVillageByName || isAtDibee || isWithinRadius || isDibeeInSugihwaras;
-
-      console.log("Is at branch by name:", isAtBranchByName);
-      console.log("Is at village by name:", isAtVillageByName);
-      console.log("Is at dibee:", isAtDibee);
-      console.log("Is within radius:", isWithinRadius);
-      console.log("Is Dibee in Sugihwaras:", isDibeeInSugihwaras);
-      console.log("Is within range:", isWithinRange);
-
-      if (!isWithinRange) {
+      if (branches.length === 0) {
         setLoading(false);
-        toast.error('Anda tidak sedang berada di wilayah kerja anda. Mengalihkan ke menu izin...', { duration: 4000 });
+        toast.error('Belum ada data cabang/lokasi kerja. Silakan hubungi admin.');
+        return;
+      }
+
+      if (!hasCoordinates) {
+        setLoading(false);
+        toast.error('Koordinat lokasi kerja belum diatur oleh admin. Silakan hubungi admin.');
+        return;
+      }
+
+      if (!isWithinRadius) {
+        setLoading(false);
+        const distMsg = distanceToBranch !== null && !isNaN(distanceToBranch) ? ` (Jarak: ${Math.round(distanceToBranch * 1000)} meter)` : '';
+        toast.error(`Anda berada di luar radius 50 meter dari lokasi kerja${distMsg}. Mengalihkan ke menu izin...`, { duration: 4000 });
         setTimeout(() => {
           setView('permission');
         }, 2000);
@@ -2439,9 +2443,11 @@ function AdminView({ history, permissions, users }: any) {
   };
 
   const addBranch = async () => {
-    if (!newBranch.name) return toast.error('Lengkapi nama desa cabang');
+    if (!newBranch.name || !newBranch.lat || !newBranch.lng) return toast.error('Lengkapi nama desa dan koordinat (Latitude & Longitude)');
     await addDoc(collection(db, 'branches'), {
-      name: newBranch.name
+      name: newBranch.name,
+      lat: parseFloat(newBranch.lat),
+      lng: parseFloat(newBranch.lng)
     });
     setNewBranch({ name: '', lat: '', lng: '' });
     const snapshot = await getDocs(query(collection(db, 'branches')));
@@ -2637,9 +2643,11 @@ function AdminView({ history, permissions, users }: any) {
       ) : activeTab === 'branches' ? (
         <div className="space-y-6">
           <Card className="space-y-4">
-            <h3 className="font-bold">Tambah Cabang Baru (Nama Desa)</h3>
-            <div className="grid grid-cols-1 gap-4">
-              <input type="text" placeholder="Masukkan Nama Desa (misal: Suka Maju)" value={newBranch.name} onChange={e => setNewBranch({...newBranch, name: e.target.value})} className="px-4 py-2 rounded-xl border border-zinc-200" />
+            <h3 className="font-bold">Tambah Cabang Baru (Nama Desa & Koordinat)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <input type="text" placeholder="Nama Desa (misal: Suka Maju)" value={newBranch.name} onChange={e => setNewBranch({...newBranch, name: e.target.value})} className="px-4 py-2 rounded-xl border border-zinc-200" />
+              <input type="number" step="any" placeholder="Latitude (misal: -7.12345)" value={newBranch.lat} onChange={e => setNewBranch({...newBranch, lat: e.target.value})} className="px-4 py-2 rounded-xl border border-zinc-200" />
+              <input type="number" step="any" placeholder="Longitude (misal: 112.12345)" value={newBranch.lng} onChange={e => setNewBranch({...newBranch, lng: e.target.value})} className="px-4 py-2 rounded-xl border border-zinc-200" />
             </div>
             <Button onClick={addBranch} variant="primary">Tambah Cabang</Button>
           </Card>
@@ -2648,7 +2656,9 @@ function AdminView({ history, permissions, users }: any) {
               <Card key={branch.id} className="flex items-center justify-between">
                 <div>
                   <h4 className="font-bold">{branch.name}</h4>
-                  <p className="text-sm text-zinc-500">Lokasi Absensi</p>
+                  <p className="text-sm text-zinc-500">
+                    {branch.lat && branch.lng ? `${branch.lat}, ${branch.lng}` : 'Koordinat belum diatur'}
+                  </p>
                 </div>
                 <Button onClick={() => deleteBranch(branch.id)} variant="danger">Hapus</Button>
               </Card>
