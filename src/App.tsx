@@ -179,7 +179,7 @@ export default function App() {
             if (!lastNotified) {
               toast('Waktu shift Anda sudah berakhir. Silakan lakukan absensi pulang.', {
                 icon: '⏰',
-                duration: 8000,
+                duration: 7000,
                 style: {
                   borderRadius: '10px',
                   background: '#333',
@@ -1279,15 +1279,19 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
 
+        // Fetch all attendance for the user and filter by date on the client side
+        // to avoid requiring a composite index in Firestore
         const qToday = query(
           collection(db, 'attendance'),
-          where('user_id', '==', user.id),
-          where('timestamp', '>=', today),
-          where('timestamp', '<', tomorrow)
+          where('user_id', '==', user.id)
         );
         
         const snapshotToday = await getDocs(qToday);
-        const hasMasuk = snapshotToday.docs.some(doc => doc.data().type === 'Masuk');
+        const hasMasuk = snapshotToday.docs.some(doc => {
+          const data = doc.data();
+          const timestamp = data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp);
+          return data.type === 'Masuk' && timestamp >= today && timestamp < tomorrow;
+        });
         
         if (hasMasuk) {
           toast.error('Anda sudah melakukan absensi pada periode shift saat ini, silahkan absensi pulang terlebih dulu');
@@ -1319,7 +1323,7 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         return d;
       };
 
-      // Check if user is within 50m of their assigned branch (or any branch if no village assigned)
+      // Check if user is within 1km of their assigned branch (or any branch if no village assigned)
       let isWithinRadius = false;
       let distanceToBranch = null;
       let hasCoordinates = true;
@@ -1330,18 +1334,18 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
           if (userBranch.lat && userBranch.lng) {
             distanceToBranch = getDistanceFromLatLonInKm(location.lat, location.lng, userBranch.lat, userBranch.lng);
             console.log(`Distance to ${userBranch.name}: ${distanceToBranch} km`);
-            if (distanceToBranch <= 0.05) { // 50 meters radius
+            if (distanceToBranch <= 1) { // 1 km radius
               isWithinRadius = true;
             }
           } else {
             hasCoordinates = false;
           }
         } else {
-          // If no specific branch, check if within 50m of ANY branch
+          // If no specific branch, check if within 1km of ANY branch
           isWithinRadius = branches.some(branch => {
             if (!branch.lat || !branch.lng) return false;
             const distance = getDistanceFromLatLonInKm(location.lat, location.lng, branch.lat, branch.lng);
-            return distance <= 0.05;
+            return distance <= 1;
           });
           
           // If no branches have coordinates, we can't validate
@@ -1351,7 +1355,7 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         }
       }
 
-      console.log("Is within 50m radius:", isWithinRadius);
+      console.log("Is within 1km radius:", isWithinRadius);
 
       if (branches.length === 0) {
         setLoading(false);
@@ -1368,7 +1372,7 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       if (!isWithinRadius) {
         setLoading(false);
         const distMsg = distanceToBranch !== null && !isNaN(distanceToBranch) ? ` (Jarak: ${Math.round(distanceToBranch * 1000)} meter)` : '';
-        toast.error(`Anda berada di luar radius 50 meter dari lokasi kerja${distMsg}. Mengalihkan ke menu izin...`, { duration: 4000 });
+        toast.error(`Anda berada di luar radius 1 km dari lokasi kerja${distMsg}. Mengalihkan ke menu izin...`, { duration: 4000 });
         setTimeout(() => {
           setView('permission');
         }, 2000);
@@ -2452,13 +2456,13 @@ function AdminView({ history, permissions, users }: any) {
     setNewBranch({ name: '', lat: '', lng: '' });
     const snapshot = await getDocs(query(collection(db, 'branches')));
     setBranches(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    toast.success('Cabang berhasil ditambah');
+    toast.success('Unit Layanan berhasil ditambah');
   };
 
   const deleteBranch = async (id: string) => {
     await deleteDoc(doc(db, 'branches', id));
     setBranches(branches.filter(b => b.id !== id));
-    toast.success('Cabang berhasil dihapus');
+    toast.success('Unit Layanan berhasil dihapus');
   };
   const exportToExcel = (mode: 'all' | 'daily' | 'monthly') => {
     let dataToExport = activeTab === 'attendance' ? history : permissions;
@@ -2649,7 +2653,7 @@ function AdminView({ history, permissions, users }: any) {
               <input type="number" step="any" placeholder="Latitude (misal: -7.12345)" value={newBranch.lat} onChange={e => setNewBranch({...newBranch, lat: e.target.value})} className="px-4 py-2 rounded-xl border border-zinc-200" />
               <input type="number" step="any" placeholder="Longitude (misal: 112.12345)" value={newBranch.lng} onChange={e => setNewBranch({...newBranch, lng: e.target.value})} className="px-4 py-2 rounded-xl border border-zinc-200" />
             </div>
-            <Button onClick={addBranch} variant="primary">Tambah Cabang</Button>
+            <Button onClick={addBranch} variant="primary">Tambah Unit Layanan</Button>
           </Card>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {branches.map(branch => (
