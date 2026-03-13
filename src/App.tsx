@@ -2162,12 +2162,13 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
       const start = new Date(formData.start_date);
       const end = new Date(formData.end_date);
       let current = new Date(start);
+      const now = new Date(); // Waktu saat absensi/izin diajukan
       
       while (current <= end) {
         const attendanceRef = doc(collection(db, 'attendance'));
-        // Set waktu ke jam 08:00:00 untuk record tersebut
+        // Set waktu menyesuaikan saat absensi (izin/dinas luar) diajukan
         const recordDate = new Date(current);
-        recordDate.setHours(8, 0, 0, 0);
+        recordDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
         
         batch.set(attendanceRef, {
           user_id: user.id,
