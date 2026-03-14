@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polygon, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { db } from '../lib/firebase';
-import { collection, query, where, orderBy, limit, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { db, collection, query, where, orderBy, limit, getDocs, doc, updateDoc } from '../lib/firebase';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import { Attendance, User } from '../types';
@@ -40,13 +39,31 @@ function MapUpdater({ center }: { center: [number, number] }) {
 }
 
 export default function AdminDashboard({ attendanceData, users }: { attendanceData: Attendance[], users: User[] }) {
-  const [stats, setStats] = useState({ masuk: 0, dinasLuar: 0, sakit: 0, cuti: 0 });
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userAttendance, setUserAttendance] = useState<Attendance[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [mapCenter, setMapCenter] = useState<[number, number]>([-7.115, 112.415]);
   const [exportMonth, setExportMonth] = useState(new Date().getMonth() + 1);
   const [exportYear, setExportYear] = useState(new Date().getFullYear());
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const todayAttendance = attendanceData.filter(item => {
+    if (!item.timestamp) return false;
+    const itemDate = item.timestamp.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
+    return itemDate >= today && itemDate < tomorrow;
+  });
+
+  const stats = { masuk: 0, dinasLuar: 0, sakit: 0, cuti: 0 };
+  todayAttendance.forEach(item => {
+    if (item.type === 'Masuk') stats.masuk++;
+    else if (item.type === 'Dinas Luar') stats.dinasLuar++;
+    else if (item.type === 'Sakit') stats.sakit++;
+    else if (item.type === 'Cuti') stats.cuti++;
+  });
 
   const fetchUserAttendance = async (userId: string) => {
     const q = query(collection(db, 'attendance'), where('user_id', '==', userId), orderBy('timestamp', 'desc'), limit(10));
@@ -205,8 +222,9 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
         const docData = d.data();
         return {
           Tanggal: new Date(docData.timestamp.toDate()).toLocaleString('id-ID'),
+          Tipe: docData.type,
           Status: docData.status,
-          Lokasi: docData.location ? `${docData.location.lat}, ${docData.location.lng}` : '-',
+          Lokasi: docData.latitude && docData.longitude ? `${docData.latitude}, ${docData.longitude}` : '-',
           Catatan: docData.notes || '-'
         };
       });
@@ -242,16 +260,7 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
     }
   };
 
-  useEffect(() => {
-    const newStats = { masuk: 0, dinasLuar: 0, sakit: 0, cuti: 0 };
-    attendanceData.forEach(item => {
-      if (item.status === 'Masuk') newStats.masuk++;
-      else if (item.status === 'Dinas Luar') newStats.dinasLuar++;
-      else if (item.status === 'Sakit') newStats.sakit++;
-      else if (item.status === 'Cuti') newStats.cuti++;
-    });
-    setStats(newStats);
-  }, [attendanceData]);
+
 
   const villagePolygon: [number, number][] = [
     [-6.2000, 106.8166],
@@ -311,7 +320,7 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
                 {userAttendance.map(a => (
                   <div key={a.id} className="flex justify-between text-sm">
                     <span>{new Date(a.timestamp.toDate()).toLocaleDateString()}</span>
-                    <span>{a.status}</span>
+                    <span>{a.type} - {a.status}</span>
                   </div>
                 ))}
               </div>
@@ -349,16 +358,16 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
           <MapUpdater center={mapCenter} />
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <Polygon positions={villagePolygon} color="blue" />
-          {attendanceData.map((item, idx) => (
+          {todayAttendance.map((item, idx) => (
             <Marker 
               key={idx} 
               position={[item.latitude, item.longitude]} 
-              icon={item.status === 'Masuk' ? greenIcon : yellowIcon}
+              icon={item.type === 'Masuk' ? greenIcon : yellowIcon}
             >
               <Popup>
                 <div>
                   <p className="font-bold">{item.name}</p>
-                  <p className="text-sm">{item.status}</p>
+                  <p className="text-sm">{item.type} - {item.status}</p>
                   <p className="text-xs">{new Date(item.timestamp.toDate()).toLocaleTimeString()}</p>
                 </div>
               </Popup>
@@ -368,13 +377,13 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
       </div>
 
       <Card>
-        <h3 className="text-lg font-bold mb-4">Aktivitas Terbaru</h3>
+        <h3 className="text-lg font-bold mb-4">Aktivitas Terbaru Hari Ini</h3>
         <div className="space-y-4">
-          {attendanceData.slice(0, 5).map((item, idx) => (
+          {todayAttendance.slice(0, 5).map((item, idx) => (
             <div key={idx} className="flex justify-between items-center border-b pb-2 cursor-pointer hover:bg-zinc-50" onClick={() => setMapCenter([item.latitude, item.longitude])}>
               <div>
                 <p className="font-bold">{item.name}</p>
-                <p className="text-sm text-zinc-500">{item.status}</p>
+                <p className="text-sm text-zinc-500">{item.type} - {item.status}</p>
               </div>
               <p className="text-sm text-zinc-400">{new Date(item.timestamp.toDate()).toLocaleTimeString()}</p>
             </div>

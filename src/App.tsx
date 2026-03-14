@@ -28,35 +28,13 @@ import { cn } from './lib/utils';
 import { User, Attendance, Permission } from './types';
 
 // Firebase Imports
-import { auth, db, storage } from './lib/firebase';
 import { 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut,
-  sendPasswordResetEmail,
-  updatePassword,
-  reauthenticateWithCredential,
-  EmailAuthProvider
-} from 'firebase/auth';
-import { 
-  collection, 
-  addDoc, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  doc, 
-  getDoc, 
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  writeBatch,
-  Timestamp,
-  serverTimestamp
-} from 'firebase/firestore';
+  auth, db, storage, 
+  onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider,
+  collection, addDoc, getDocs, query, where, orderBy, doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, Timestamp, serverTimestamp,
+  ref, uploadString, getDownloadURL
+} from './lib/firebase';
 import AdminDashboard from './components/AdminDashboard';
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { getHighAccuracyLocation } from './utils/locationUtils';
 
 const getDeviceId = () => {
@@ -696,8 +674,13 @@ function ForgotPasswordView({ onSuccess, onBack }: any) {
         throw new Error('Email tidak ditemukan untuk NIP ini.');
       }
 
+      const actionCodeSettings = {
+        url: window.location.origin,
+        handleCodeInApp: false
+      };
+
       try {
-        await sendPasswordResetEmail(auth, email);
+        await sendPasswordResetEmail(auth, email, actionCodeSettings);
       } catch (authErr: any) {
         if (authErr.code === 'auth/user-not-found') {
           throw new Error('NIP anda belum terdaftar silahkan lakukan pendaftaran.');
@@ -978,8 +961,8 @@ function NotificationsView({ notifications, setView, fetchNotifications }: any) 
         {notifications.length === 0 ? (
           <p className="text-center text-zinc-500">Tidak ada notifikasi.</p>
         ) : (
-          notifications.map((n: any) => (
-            <Card key={n.id} className="p-4 flex items-center gap-4">
+          notifications.map((n: any, idx: number) => (
+            <Card key={`${n.id}-${idx}`} className="p-4 flex items-center gap-4">
               <div className={`w-2 h-2 rounded-full ${n.read ? 'bg-zinc-300' : 'bg-red-500'}`} />
               <div>
                 <p className="text-sm">{n.message}</p>
@@ -1079,7 +1062,7 @@ function DashboardView({ user, history, notifications, setView }: any) {
         </div>
         <div className="space-y-4">
           {history.slice(0, 3).map((item: Attendance, idx: number) => (
-            <Card key={item.id || `hist-${idx}`} className="flex items-center justify-between py-4">
+            <Card key={`${item.id}-${idx}`} className="flex items-center justify-between py-4">
               <div className="flex items-center gap-4">
                 <div className={cn(
                   "w-12 h-12 rounded-xl flex items-center justify-center",
@@ -1133,7 +1116,6 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
   const [location, setLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
-  const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -1149,22 +1131,15 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       const accuracy = pos.coords.accuracy;
       setLocation({ lat, lng, accuracy });
       
-      // Fetch address from BigDataCloud (Alternative to Google Maps which requires paid API key)
+      // Fetch address from Nominatim
       try {
-        const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=id`);
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
         const data = await response.json();
-        
-        const locality = data.locality || '';
-        const city = data.city || '';
-        const principalSubdivision = data.principalSubdivision || '';
-        
-        let formattedAddress = [locality, city, principalSubdivision].filter(Boolean).join(', ');
-        
-        if (!formattedAddress) {
-          formattedAddress = 'Lokasi tidak dikenal';
+        if (data && data.display_name) {
+          setAddress(data.display_name);
+        } else {
+          setAddress('Lokasi tidak dikenal');
         }
-        
-        setAddress(formattedAddress);
       } catch (err) {
         console.error("Geocoding error:", err);
         setAddress('Gagal memuat alamat');
@@ -1178,12 +1153,6 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
   };
 
   useEffect(() => {
-    const fetchBranches = async () => {
-      const q = query(collection(db, 'branches'));
-      const snapshot = await getDocs(q);
-      setBranches(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    };
-    fetchBranches();
     fetchLocation();
   }, []);
 
@@ -1299,81 +1268,9 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       console.error("Error checking previous attendance:", err);
     }
 
-    // Validasi lokasi berdasarkan nama desa (hanya untuk absensi masuk)
+    // Validasi lokasi berdasarkan nama desa dinonaktifkan atas permintaan user
     if (type === 'Masuk') {
-      console.log("Validating location for Masuk");
-      console.log("Address:", address);
-      console.log("User Village:", user.village);
-      console.log("Branches:", branches);
-
-      const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-        const R = 6371; // Radius of the earth in km
-        const dLat = (lat2 - lat1) * (Math.PI / 180);
-        const dLon = (lon2 - lon1) * (Math.PI / 180);
-        const a = 
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
-          Math.sin(dLon / 2) * Math.sin(dLon / 2); 
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
-        const d = R * c; // Distance in km
-        return d;
-      };
-
-      // Check if user is within 1km of their assigned branch (or any branch if no village assigned)
-      let isWithinRadius = false;
-      let distanceToBranch = null;
-      let hasCoordinates = true;
-
-      if (location) {
-        const userBranch = branches.find(b => b.name.toLowerCase() === user.village?.toLowerCase());
-        if (userBranch) {
-          if (userBranch.lat && userBranch.lng) {
-            distanceToBranch = getDistanceFromLatLonInKm(location.lat, location.lng, userBranch.lat, userBranch.lng);
-            console.log(`Distance to ${userBranch.name}: ${distanceToBranch} km`);
-            if (distanceToBranch <= 1) { // 1 km radius
-              isWithinRadius = true;
-            }
-          } else {
-            hasCoordinates = false;
-          }
-        } else {
-          // If no specific branch, check if within 1km of ANY branch
-          isWithinRadius = branches.some(branch => {
-            if (!branch.lat || !branch.lng) return false;
-            const distance = getDistanceFromLatLonInKm(location.lat, location.lng, branch.lat, branch.lng);
-            return distance <= 1;
-          });
-          
-          // If no branches have coordinates, we can't validate
-          if (branches.length > 0 && !branches.some(b => b.lat && b.lng)) {
-            hasCoordinates = false;
-          }
-        }
-      }
-
-      console.log("Is within 1km radius:", isWithinRadius);
-
-      if (branches.length === 0) {
-        setLoading(false);
-        toast.error('Belum ada data cabang/lokasi kerja. Silakan hubungi admin.');
-        return;
-      }
-
-      if (!hasCoordinates) {
-        setLoading(false);
-        toast.error('Koordinat lokasi kerja belum diatur oleh admin. Silakan hubungi admin.');
-        return;
-      }
-
-      if (!isWithinRadius) {
-        setLoading(false);
-        const distMsg = distanceToBranch !== null && !isNaN(distanceToBranch) ? ` (Jarak: ${Math.round(distanceToBranch * 1000)} meter)` : '';
-        toast.error(`Anda berada di luar radius 1 km dari lokasi kerja${distMsg}. Mengalihkan ke menu izin...`, { duration: 4000 });
-        setTimeout(() => {
-          setView('permission');
-        }, 2000);
-        return;
-      }
+      console.log("Location validation bypassed");
     }
 
     if (!navigator.onLine) {
@@ -1547,16 +1444,6 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
                 <p className="text-zinc-500">
                   {address ? address : location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : isLocating ? 'Mencari lokasi...' : 'Lokasi belum terdeteksi'}
                   {location?.accuracy && <span className="block text-xs text-zinc-400 mt-0.5">Akurasi: {Math.round(location.accuracy)} meter</span>}
-                  {location && (
-                    <a 
-                      href={`https://www.google.com/maps?q=${location.lat},${location.lng}`} 
-                      target="_blank" 
-                      rel="noreferrer" 
-                      className="block text-xs text-emerald-600 mt-1 hover:underline"
-                    >
-                      Buka di Google Maps
-                    </a>
-                  )}
                 </p>
               </div>
             </div>
@@ -1797,8 +1684,8 @@ function RekapView({ user }: { user: User }) {
                 className="w-full px-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="all">Semua Pegawai</option>
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.nip})</option>
+                {users.map((u, idx) => (
+                  <option key={`${u.id}-${idx}`} value={u.id}>{u.name} ({u.nip})</option>
                 ))}
               </select>
             </div>
@@ -1853,7 +1740,7 @@ function RekapView({ user }: { user: User }) {
                   const d = item.timestamp?.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
                   const shift = getShiftInfo(d);
                   return (
-                  <tr key={item.id || idx} className="hover:bg-zinc-50/50 transition-colors">
+                  <tr key={`${item.id}-${idx}`} className="hover:bg-zinc-50/50 transition-colors">
                     {user.role === 'admin' && (
                       <td className="p-4">
                         <p className="text-sm font-bold">{item.name || '-'}</p>
@@ -1933,7 +1820,7 @@ function HistoryView({ history, indexErrorUrl, isBuilding }: { history: Attendan
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {history.map((item, idx) => (
-          <Card key={item.id || `hist-full-${idx}`} className="overflow-hidden p-0">
+          <Card key={`${item.id}-${idx}`} className="overflow-hidden p-0">
             <div className="aspect-video relative">
               <img src={item.photo} className="w-full h-full object-cover" alt="Attendance" referrerPolicy="no-referrer" />
               <div className="absolute top-4 left-4">
@@ -1996,22 +1883,15 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
       const accuracy = pos.coords.accuracy;
       setLocation({ lat, lng, accuracy });
       
-      // Fetch address from BigDataCloud (Alternative to Google Maps which requires paid API key)
+      // Fetch address from Nominatim
       try {
-        const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=id`);
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
         const data = await response.json();
-        
-        const locality = data.locality || '';
-        const city = data.city || '';
-        const principalSubdivision = data.principalSubdivision || '';
-        
-        let formattedAddress = [locality, city, principalSubdivision].filter(Boolean).join(', ');
-        
-        if (!formattedAddress) {
-          formattedAddress = 'Lokasi tidak dikenal';
+        if (data && data.display_name) {
+          setAddress(data.display_name);
+        } else {
+          setAddress('Lokasi tidak dikenal');
         }
-        
-        setAddress(formattedAddress);
       } catch (err) {
         console.error("Geocoding error:", err);
         setAddress('Gagal memuat alamat');
@@ -2383,7 +2263,7 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
         )}
 
         {permissions.map((p: Permission, idx: number) => (
-          <Card key={p.id || `perm-${idx}`} className="flex items-center justify-between py-4">
+          <Card key={`${p.id}-${idx}`} className="flex items-center justify-between py-4">
             <div className="flex items-center gap-4">
               <div className={cn(
                 "w-12 h-12 rounded-xl flex items-center justify-center",
@@ -2417,11 +2297,9 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
 }
 
 function AdminView({ history, permissions, users }: any) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'permissions' | 'branches' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'permissions' | 'settings'>('dashboard');
   const [exportDate, setExportDate] = useState(new Date().toISOString().split('T')[0]);
   const [exportMonth, setExportMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [branches, setBranches] = useState<any[]>([]);
-  const [newBranch, setNewBranch] = useState({ name: '', lat: '', lng: '' });
   const [webhookUrl, setWebhookUrl] = useState('');
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -2429,11 +2307,6 @@ function AdminView({ history, permissions, users }: any) {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
-    const fetchBranches = async () => {
-      const q = query(collection(db, 'branches'));
-      const snapshot = await getDocs(q);
-      setBranches(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    };
     const fetchSettings = async () => {
       const docRef = doc(db, 'settings', 'general');
       const docSnap = await getDoc(docRef);
@@ -2441,7 +2314,6 @@ function AdminView({ history, permissions, users }: any) {
         setWebhookUrl(docSnap.data().webhookUrl || '');
       }
     };
-    fetchBranches();
     fetchSettings();
   }, []);
 
@@ -2455,24 +2327,6 @@ function AdminView({ history, permissions, users }: any) {
     }
   };
 
-  const addBranch = async () => {
-    if (!newBranch.name || !newBranch.lat || !newBranch.lng) return toast.error('Lengkapi nama desa dan koordinat (Latitude & Longitude)');
-    await addDoc(collection(db, 'branches'), {
-      name: newBranch.name,
-      lat: parseFloat(newBranch.lat),
-      lng: parseFloat(newBranch.lng)
-    });
-    setNewBranch({ name: '', lat: '', lng: '' });
-    const snapshot = await getDocs(query(collection(db, 'branches')));
-    setBranches(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    toast.success('Unit Layanan berhasil ditambah');
-  };
-
-  const deleteBranch = async (id: string) => {
-    await deleteDoc(doc(db, 'branches', id));
-    setBranches(branches.filter(b => b.id !== id));
-    toast.success('Unit Layanan berhasil dihapus');
-  };
   const exportToExcel = (mode: 'all' | 'daily' | 'monthly') => {
     let dataToExport = activeTab === 'attendance' ? history : permissions;
     let filename = `Rekap_${activeTab === 'attendance' ? 'Absensi' : 'Izin'}`;
@@ -2562,7 +2416,7 @@ function AdminView({ history, permissions, users }: any) {
           <p className="text-zinc-500 font-medium">Kelola seluruh aktivitas pegawai</p>
         </div>
         <div className="flex bg-zinc-100 p-1 rounded-xl">
-          {(['dashboard', 'attendance', 'permissions', 'branches', 'settings'] as const).map(tab => (
+          {(['dashboard', 'attendance', 'permissions', 'settings'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -2653,31 +2507,6 @@ function AdminView({ history, permissions, users }: any) {
             </div>
           </Card>
         </div>
-      ) : activeTab === 'branches' ? (
-        <div className="space-y-6">
-          <Card className="space-y-4">
-            <h3 className="font-bold">Tambah Cabang Baru (Nama Desa & Koordinat)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <input type="text" placeholder="Nama Desa (misal: Suka Maju)" value={newBranch.name} onChange={e => setNewBranch({...newBranch, name: e.target.value})} className="px-4 py-2 rounded-xl border border-zinc-200" />
-              <input type="number" step="any" placeholder="Latitude (misal: -7.12345)" value={newBranch.lat} onChange={e => setNewBranch({...newBranch, lat: e.target.value})} className="px-4 py-2 rounded-xl border border-zinc-200" />
-              <input type="number" step="any" placeholder="Longitude (misal: 112.12345)" value={newBranch.lng} onChange={e => setNewBranch({...newBranch, lng: e.target.value})} className="px-4 py-2 rounded-xl border border-zinc-200" />
-            </div>
-            <Button onClick={addBranch} variant="primary">Tambah Unit Layanan</Button>
-          </Card>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {branches.map(branch => (
-              <Card key={branch.id} className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-bold">{branch.name}</h4>
-                  <p className="text-sm text-zinc-500">
-                    {branch.lat && branch.lng ? `${branch.lat}, ${branch.lng}` : 'Koordinat belum diatur'}
-                  </p>
-                </div>
-                <Button onClick={() => deleteBranch(branch.id)} variant="danger">Hapus</Button>
-              </Card>
-            ))}
-          </div>
-        </div>
       ) : (
         <>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -2748,7 +2577,7 @@ function AdminView({ history, permissions, users }: any) {
               <tbody className="divide-y divide-zinc-50">
                 {activeTab === 'attendance' ? (
                   displayedHistory.length > 0 ? displayedHistory.map((item: any, idx: number) => (
-                    <tr key={item.id || `admin-hist-${idx}`} className="hover:bg-zinc-50/50 transition-colors">
+                    <tr key={`${item.id}-${idx}`} className="hover:bg-zinc-50/50 transition-colors">
                       <td className="p-4">
                         <p className="font-bold">{item.name}</p>
                         <p className="text-xs text-zinc-400">{item.nip}</p>
@@ -2781,7 +2610,7 @@ function AdminView({ history, permissions, users }: any) {
                   )
                 ) : (
                   displayedPermissions.length > 0 ? displayedPermissions.map((p: any, idx: number) => (
-                    <tr key={p.id || `admin-perm-${idx}`} className="hover:bg-zinc-50/50 transition-colors">
+                    <tr key={`${p.id}-${idx}`} className="hover:bg-zinc-50/50 transition-colors">
                       <td className="p-4">
                         <p className="font-bold">{p.name}</p>
                         <p className="text-xs text-zinc-400">{p.nip}</p>
