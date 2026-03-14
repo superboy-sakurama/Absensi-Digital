@@ -57,6 +57,7 @@ import {
 } from 'firebase/firestore';
 import AdminDashboard from './components/AdminDashboard';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { getHighAccuracyLocation } from './utils/locationUtils';
 
 const getDeviceId = () => {
   let deviceId = localStorage.getItem('deviceId');
@@ -1144,41 +1145,44 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const fetchLocation = () => {
+  const fetchLocation = async () => {
     setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setLocation({ lat, lng });
-        
-        // Fetch address from Nominatim
-        try {
-          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
-          const data = await response.json();
-          if (data && data.address) {
-            const addr = data.address;
-            const desa = addr.village || addr.suburb || addr.neighbourhood || addr.hamlet || '';
-            const kecamatan = addr.city_district || addr.district || '';
-            const kabupaten = addr.city || addr.regency || addr.county || '';
-            
-            const formattedAddress = [desa, kecamatan, kabupaten].filter(Boolean).join(', ');
-            setAddress(formattedAddress || 'Lokasi tidak dikenal');
+    try {
+      const pos = await getHighAccuracyLocation();
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      setLocation({ lat, lng });
+      
+      // Fetch address from Nominatim
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+        const data = await response.json();
+        if (data && data.address) {
+          const addr = data.address;
+          const desa = addr.village || addr.suburb || addr.neighbourhood || addr.hamlet || addr.residential || addr.town || '';
+          const kecamatan = addr.city_district || addr.district || '';
+          const kabupaten = addr.city || addr.regency || addr.county || '';
+          
+          let formattedAddress = [desa, kecamatan, kabupaten].filter(Boolean).join(', ');
+          
+          // Fallback to display_name if our parsing is too empty
+          if (!desa && data.display_name) {
+             // Just take the first 3 parts of the display name to keep it short
+             formattedAddress = data.display_name.split(',').slice(0, 3).join(', ');
           }
-        } catch (err) {
-          console.error("Geocoding error:", err);
-          setAddress('Gagal memuat alamat');
-        } finally {
-          setIsLocating(false);
+          
+          setAddress(formattedAddress || 'Lokasi tidak dikenal');
         }
-      },
-      (err) => {
-        console.error("Geolocation error:", err);
-        toast.error('Gagal mendapatkan lokasi. Pastikan GPS aktif dan izin diberikan.');
-        setIsLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
+      } catch (err) {
+        console.error("Geocoding error:", err);
+        setAddress('Gagal memuat alamat');
+      }
+    } catch (err) {
+      console.error("Geolocation error:", err);
+      toast.error('Gagal mendapatkan lokasi akurat. Pastikan GPS aktif dan izin diberikan.');
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   useEffect(() => {
@@ -1980,41 +1984,44 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const fetchLocation = () => {
+  const fetchLocation = async () => {
     setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setLocation({ lat, lng });
-        
-        // Fetch address from Nominatim
-        try {
-          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
-          const data = await response.json();
-          if (data && data.address) {
-            const addr = data.address;
-            const desa = addr.village || addr.suburb || addr.neighbourhood || addr.hamlet || '';
-            const kecamatan = addr.city_district || addr.district || '';
-            const kabupaten = addr.city || addr.regency || addr.county || '';
-            
-            const formattedAddress = [desa, kecamatan, kabupaten].filter(Boolean).join(', ');
-            setAddress(formattedAddress || 'Lokasi tidak dikenal');
+    try {
+      const pos = await getHighAccuracyLocation();
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      setLocation({ lat, lng });
+      
+      // Fetch address from Nominatim
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+        const data = await response.json();
+        if (data && data.address) {
+          const addr = data.address;
+          const desa = addr.village || addr.suburb || addr.neighbourhood || addr.hamlet || addr.residential || addr.town || '';
+          const kecamatan = addr.city_district || addr.district || '';
+          const kabupaten = addr.city || addr.regency || addr.county || '';
+          
+          let formattedAddress = [desa, kecamatan, kabupaten].filter(Boolean).join(', ');
+          
+          // Fallback to display_name if our parsing is too empty
+          if (!desa && data.display_name) {
+             // Just take the first 3 parts of the display name to keep it short
+             formattedAddress = data.display_name.split(',').slice(0, 3).join(', ');
           }
-        } catch (err) {
-          console.error("Geocoding error:", err);
-          setAddress('Gagal memuat alamat');
-        } finally {
-          setIsLocating(false);
+          
+          setAddress(formattedAddress || 'Lokasi tidak dikenal');
         }
-      },
-      (err) => {
-        console.error("Geolocation error:", err);
-        toast.error('Gagal mendapatkan lokasi. Pastikan GPS aktif dan izin diberikan.');
-        setIsLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
+      } catch (err) {
+        console.error("Geocoding error:", err);
+        setAddress('Gagal memuat alamat');
+      }
+    } catch (err) {
+      console.error("Geolocation error:", err);
+      toast.error('Gagal mendapatkan lokasi akurat. Pastikan GPS aktif dan izin diberikan.');
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   useEffect(() => {
