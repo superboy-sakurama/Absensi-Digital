@@ -1149,18 +1149,22 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       const accuracy = pos.coords.accuracy;
       setLocation({ lat, lng, accuracy });
       
-      // Fetch address from Nominatim
+      // Fetch address from BigDataCloud (Alternative to Google Maps which requires paid API key)
       try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+        const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=id`);
         const data = await response.json();
-        if (data && data.display_name) {
-          // Use the first 4 parts of display_name to be more specific
-          const parts = data.display_name.split(',').map((p: string) => p.trim());
-          const formattedAddress = parts.slice(0, 4).join(', ');
-          setAddress(formattedAddress || 'Lokasi tidak dikenal');
-        } else {
-          setAddress('Lokasi tidak dikenal');
+        
+        const locality = data.locality || '';
+        const city = data.city || '';
+        const principalSubdivision = data.principalSubdivision || '';
+        
+        let formattedAddress = [locality, city, principalSubdivision].filter(Boolean).join(', ');
+        
+        if (!formattedAddress) {
+          formattedAddress = 'Lokasi tidak dikenal';
         }
+        
+        setAddress(formattedAddress);
       } catch (err) {
         console.error("Geocoding error:", err);
         setAddress('Gagal memuat alamat');
@@ -1543,6 +1547,16 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
                 <p className="text-zinc-500">
                   {address ? address : location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : isLocating ? 'Mencari lokasi...' : 'Lokasi belum terdeteksi'}
                   {location?.accuracy && <span className="block text-xs text-zinc-400 mt-0.5">Akurasi: {Math.round(location.accuracy)} meter</span>}
+                  {location && (
+                    <a 
+                      href={`https://www.google.com/maps?q=${location.lat},${location.lng}`} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="block text-xs text-emerald-600 mt-1 hover:underline"
+                    >
+                      Buka di Google Maps
+                    </a>
+                  )}
                 </p>
               </div>
             </div>
@@ -1982,18 +1996,22 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
       const accuracy = pos.coords.accuracy;
       setLocation({ lat, lng, accuracy });
       
-      // Fetch address from Nominatim
+      // Fetch address from BigDataCloud (Alternative to Google Maps which requires paid API key)
       try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+        const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=id`);
         const data = await response.json();
-        if (data && data.display_name) {
-          // Use the first 4 parts of display_name to be more specific
-          const parts = data.display_name.split(',').map((p: string) => p.trim());
-          const formattedAddress = parts.slice(0, 4).join(', ');
-          setAddress(formattedAddress || 'Lokasi tidak dikenal');
-        } else {
-          setAddress('Lokasi tidak dikenal');
+        
+        const locality = data.locality || '';
+        const city = data.city || '';
+        const principalSubdivision = data.principalSubdivision || '';
+        
+        let formattedAddress = [locality, city, principalSubdivision].filter(Boolean).join(', ');
+        
+        if (!formattedAddress) {
+          formattedAddress = 'Lokasi tidak dikenal';
         }
+        
+        setAddress(formattedAddress);
       } catch (err) {
         console.error("Geocoding error:", err);
         setAddress('Gagal memuat alamat');
