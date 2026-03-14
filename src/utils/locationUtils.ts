@@ -8,6 +8,7 @@ export const getHighAccuracyLocation = (): Promise<GeolocationPosition> => {
     let watchId: number;
     let timeoutId: NodeJS.Timeout;
     let bestPosition: GeolocationPosition | null = null;
+    let readings = 0;
 
     const clearWatch = () => {
       if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
@@ -21,28 +22,34 @@ export const getHighAccuracyLocation = (): Promise<GeolocationPosition> => {
       } else {
         reject(new Error('Timeout waiting for location'));
       }
-    }, 15000); // 15 seconds timeout
+    }, 20000); // 20 seconds timeout
 
     watchId = navigator.geolocation.watchPosition(
       (position) => {
+        readings++;
         if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
           bestPosition = position;
         }
         
-        // If accuracy is good enough (e.g., less than 30 meters), resolve immediately
-        if (position.coords.accuracy <= 30) {
+        // Require at least 3 readings to let GPS settle, or very high accuracy (<15m)
+        if ((position.coords.accuracy <= 15) || (position.coords.accuracy <= 30 && readings >= 3)) {
           clearWatch();
-          resolve(position);
+          resolve(bestPosition);
         }
       },
       (error) => {
-        clearWatch();
-        reject(error);
+        if (bestPosition) {
+          clearWatch();
+          resolve(bestPosition);
+        } else {
+          clearWatch();
+          reject(error);
+        }
       },
       {
         enableHighAccuracy: true,
         maximumAge: 0,
-        timeout: 10000
+        timeout: 15000
       }
     );
   });

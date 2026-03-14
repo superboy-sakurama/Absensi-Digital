@@ -1135,7 +1135,7 @@ function MenuCard({ icon, title, desc, onClick, color }: any) {
 function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) {
   const [type, setType] = useState<'Masuk' | 'Pulang' | 'Dinas Luar'>('Masuk');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [location, setLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [branches, setBranches] = useState<any[]>([]);
@@ -1151,7 +1151,8 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       const pos = await getHighAccuracyLocation();
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
-      setLocation({ lat, lng });
+      const accuracy = pos.coords.accuracy;
+      setLocation({ lat, lng, accuracy });
       
       // Fetch address from Nominatim
       try {
@@ -1554,6 +1555,7 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
                 <p className="font-bold">Lokasi GPS</p>
                 <p className="text-zinc-500">
                   {address ? address : location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : isLocating ? 'Mencari lokasi...' : 'Lokasi belum terdeteksi'}
+                  {location?.accuracy && <span className="block text-xs text-zinc-400 mt-0.5">Akurasi: {Math.round(location.accuracy)} meter</span>}
                 </p>
               </div>
             </div>
@@ -1976,7 +1978,7 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
   const [formData, setFormData] = useState({ type: 'Sakit', reason: '', start_date: '', end_date: '' });
   const [loading, setLoading] = useState(false);
   const [photo, setPhoto] = useState('');
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [location, setLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
@@ -1990,7 +1992,8 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
       const pos = await getHighAccuracyLocation();
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
-      setLocation({ lat, lng });
+      const accuracy = pos.coords.accuracy;
+      setLocation({ lat, lng, accuracy });
       
       // Fetch address from Nominatim
       try {
@@ -2298,6 +2301,7 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
                     <p className="font-bold">Lokasi GPS</p>
                     <p className="text-zinc-500">
                       {address ? address : location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : isLocating ? 'Mencari lokasi...' : 'Lokasi belum terdeteksi'}
+                      {location?.accuracy && <span className="block text-xs text-zinc-400 mt-0.5">Akurasi: {Math.round(location.accuracy)} meter</span>}
                     </p>
                   </div>
                 </div>
