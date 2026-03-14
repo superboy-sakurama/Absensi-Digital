@@ -696,13 +696,8 @@ function ForgotPasswordView({ onSuccess, onBack }: any) {
         throw new Error('Email tidak ditemukan untuk NIP ini.');
       }
 
-      const actionCodeSettings = {
-        url: window.location.origin,
-        handleCodeInApp: false
-      };
-
       try {
-        await sendPasswordResetEmail(auth, email, actionCodeSettings);
+        await sendPasswordResetEmail(auth, email);
       } catch (authErr: any) {
         if (authErr.code === 'auth/user-not-found') {
           throw new Error('NIP anda belum terdaftar silahkan lakukan pendaftaran.');
@@ -1158,21 +1153,13 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       try {
         const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
         const data = await response.json();
-        if (data && data.address) {
-          const addr = data.address;
-          const desa = addr.village || addr.suburb || addr.neighbourhood || addr.hamlet || addr.residential || addr.town || '';
-          const kecamatan = addr.city_district || addr.district || '';
-          const kabupaten = addr.city || addr.regency || addr.county || '';
-          
-          let formattedAddress = [desa, kecamatan, kabupaten].filter(Boolean).join(', ');
-          
-          // Fallback to display_name if our parsing is too empty
-          if (!desa && data.display_name) {
-             // Just take the first 3 parts of the display name to keep it short
-             formattedAddress = data.display_name.split(',').slice(0, 3).join(', ');
-          }
-          
+        if (data && data.display_name) {
+          // Use the first 4 parts of display_name to be more specific
+          const parts = data.display_name.split(',').map((p: string) => p.trim());
+          const formattedAddress = parts.slice(0, 4).join(', ');
           setAddress(formattedAddress || 'Lokasi tidak dikenal');
+        } else {
+          setAddress('Lokasi tidak dikenal');
         }
       } catch (err) {
         console.error("Geocoding error:", err);
@@ -1999,21 +1986,13 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
       try {
         const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
         const data = await response.json();
-        if (data && data.address) {
-          const addr = data.address;
-          const desa = addr.village || addr.suburb || addr.neighbourhood || addr.hamlet || addr.residential || addr.town || '';
-          const kecamatan = addr.city_district || addr.district || '';
-          const kabupaten = addr.city || addr.regency || addr.county || '';
-          
-          let formattedAddress = [desa, kecamatan, kabupaten].filter(Boolean).join(', ');
-          
-          // Fallback to display_name if our parsing is too empty
-          if (!desa && data.display_name) {
-             // Just take the first 3 parts of the display name to keep it short
-             formattedAddress = data.display_name.split(',').slice(0, 3).join(', ');
-          }
-          
+        if (data && data.display_name) {
+          // Use the first 4 parts of display_name to be more specific
+          const parts = data.display_name.split(',').map((p: string) => p.trim());
+          const formattedAddress = parts.slice(0, 4).join(', ');
           setAddress(formattedAddress || 'Lokasi tidak dikenal');
+        } else {
+          setAddress('Lokasi tidak dikenal');
         }
       } catch (err) {
         console.error("Geocoding error:", err);
