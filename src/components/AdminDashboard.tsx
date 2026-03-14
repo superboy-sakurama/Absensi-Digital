@@ -38,7 +38,7 @@ function MapUpdater({ center }: { center: [number, number] }) {
   return null;
 }
 
-export default function AdminDashboard({ attendanceData, users }: { attendanceData: Attendance[], users: User[] }) {
+export default function AdminDashboard({ attendanceData, permissionsData, users }: { attendanceData: Attendance[], permissionsData: any[], users: User[] }) {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userAttendance, setUserAttendance] = useState<Attendance[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -61,8 +61,15 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
   todayAttendance.forEach(item => {
     if (item.type === 'Masuk') stats.masuk++;
     else if (item.type === 'Dinas Luar') stats.dinasLuar++;
-    else if (item.type === 'Sakit') stats.sakit++;
-    else if (item.type === 'Cuti') stats.cuti++;
+  });
+
+  // Count permissions for today
+  permissionsData?.forEach((p: any) => {
+    const pDate = p.timestamp?.toDate ? p.timestamp.toDate() : new Date(p.timestamp);
+    if (pDate >= today && pDate < tomorrow && p.status === 'Disetujui') {
+      if (p.type === 'Sakit') stats.sakit++;
+      else if (p.type === 'Cuti' || p.type === 'Izin') stats.cuti++;
+    }
   });
 
   const fetchUserAttendance = async (userId: string) => {

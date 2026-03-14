@@ -105,7 +105,13 @@ const convertTimestamps = (obj: any): any => {
   if (!obj) return obj;
   if (typeof obj === 'object') {
     if (obj._seconds !== undefined) {
-      return { toDate: () => new Date(obj._seconds * 1000) };
+      const date = new Date(obj._seconds * 1000);
+      return { 
+        _seconds: obj._seconds,
+        _nanoseconds: obj._nanoseconds || 0,
+        toDate: () => date,
+        toMillis: () => date.getTime()
+      };
     }
     for (const key in obj) {
       obj[key] = convertTimestamps(obj[key]);
@@ -220,11 +226,24 @@ export const writeBatch = (dbInstance: any) => {
 };
 
 export const Timestamp = {
-  now: () => ({ toDate: () => new Date() }),
-  fromDate: (date: Date) => ({ toDate: () => date }),
+  now: () => {
+    const date = new Date();
+    return { 
+      _seconds: Math.floor(date.getTime() / 1000), 
+      _nanoseconds: (date.getTime() % 1000) * 1e6,
+      toDate: () => date,
+      toMillis: () => date.getTime()
+    };
+  },
+  fromDate: (date: Date) => ({ 
+    _seconds: Math.floor(date.getTime() / 1000), 
+    _nanoseconds: (date.getTime() % 1000) * 1e6,
+    toDate: () => date,
+    toMillis: () => date.getTime()
+  }),
 };
 
-export const serverTimestamp = () => ({ toDate: () => new Date() });
+export const serverTimestamp = () => Timestamp.now();
 
 // Mock Storage
 export const storage = {};

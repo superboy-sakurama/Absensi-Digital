@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   ChevronRight,
+  AlertTriangle,
   Briefcase,
   Calendar,
   Stethoscope,
@@ -487,7 +488,7 @@ export default function App() {
             {/* Main Content */}
             <main className="p-6 max-w-5xl mx-auto">
               {view === 'dashboard' && <DashboardView user={user} history={history} notifications={notifications} setView={setView} />}
-              {view === 'attendance' && <AttendanceView user={user} onComplete={() => setView('rekap')} fetchNotifications={fetchNotifications} setView={setView} />}
+              {view === 'attendance' && <AttendanceView user={user} history={history} onComplete={() => setView('rekap')} fetchNotifications={fetchNotifications} setView={setView} />}
               {view === 'rekap' && <RekapView user={user} />}
               {view === 'history' && <HistoryView history={history} indexErrorUrl={indexErrorUrl} isBuilding={isIndexBuilding} />}
               {view === 'permission' && <PermissionView user={user} permissions={permissions} onComplete={fetchPermissions} indexErrorUrl={permissionsIndexErrorUrl} isBuilding={isPermissionsIndexBuilding} />}
@@ -680,7 +681,7 @@ function ForgotPasswordView({ onSuccess, onBack }: any) {
       };
 
       try {
-        await sendPasswordResetEmail(auth, email, actionCodeSettings);
+        await sendPasswordResetEmail(auth, email);
       } catch (authErr: any) {
         if (authErr.code === 'auth/user-not-found') {
           throw new Error('NIP anda belum terdaftar silahkan lakukan pendaftaran.');
@@ -977,14 +978,57 @@ function NotificationsView({ notifications, setView, fetchNotifications }: any) 
 }
 
 function DashboardView({ user, history, notifications, setView }: any) {
-  const today = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const [currentTime, setCurrentTime] = useState(new Date());
+  
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const today = currentTime.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const timeStr = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  // Check for checkout alarm
+  const lastAttendance = history[0];
+  const needsCheckout = lastAttendance && lastAttendance.type === 'Masuk';
+  const shift = getShiftInfo(currentTime);
+  
+  // Simple logic: if it's 1 hour past shift end and still "Masuk", show warning
+  const showAlarm = needsCheckout && (() => {
+    const now = currentTime.getHours();
+    if (shift.name === 'Shift Pagi' && now >= 14) return true;
+    if (shift.name === 'Shift Siang' && now >= 20) return true;
+    if (shift.name === 'Shift Malam' && now >= 7 && now < 20) return true;
+    return false;
+  })();
   
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+      {showAlarm && (
+        <motion.div 
+          initial={{ height: 0, opacity: 0 }} 
+          animate={{ height: 'auto', opacity: 1 }}
+          className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-center gap-4 text-red-700"
+        >
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center animate-pulse">
+            <AlertTriangle size={24} />
+          </div>
+          <div className="flex-1">
+            <p className="font-bold">Peringatan Absensi Pulang!</p>
+            <p className="text-sm">Anda belum melakukan absensi pulang. Segera lakukan absensi untuk menghindari sanksi.</p>
+          </div>
+          <Button size="sm" variant="danger" onClick={() => setView('attendance')}>Absen Sekarang</Button>
+        </motion.div>
+      )}
+
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Halo, {user.name}</h2>
-          <p className="text-zinc-500 font-medium">{today}</p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-zinc-500 font-medium">{today}</p>
+            <span className="w-1 h-1 bg-zinc-300 rounded-full" />
+            <p className="text-emerald-600 font-bold font-mono">{timeStr}</p>
+          </div>
           {user.village && (
             <p className="text-emerald-600 font-medium text-sm mt-1 flex items-center gap-1">
               <MapPin size={14} /> Lokasi Kerja: {user.village}
@@ -1110,7 +1154,7 @@ function MenuCard({ icon, title, desc, onClick, color }: any) {
   );
 }
 
-function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) {
+function AttendanceView({ user, history, onComplete, fetchNotifications, setView }: any) {
   const [type, setType] = useState<'Masuk' | 'Pulang' | 'Dinas Luar'>('Masuk');
   const [photo, setPhoto] = useState<string | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
@@ -1235,43 +1279,23 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       return;
     }
 
-    setLoading(true);
+    // Double check-in prevention using history
+    const userHistory = history.filter((h: any) => h.user_id === user.id);
+    const lastAttendance = userHistory[0];
 
-    try {
-      if (type === 'Masuk') {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-
-        // Fetch all attendance for the user and filter by date on the client side
-        // to avoid requiring a composite index in Firestore
-        const qToday = query(
-          collection(db, 'attendance'),
-          where('user_id', '==', user.id)
-        );
-        
-        const snapshotToday = await getDocs(qToday);
-        const hasMasuk = snapshotToday.docs.some(doc => {
-          const data = doc.data();
-          const timestamp = data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp);
-          return data.type === 'Masuk' && timestamp >= today && timestamp < tomorrow;
-        });
-        
-        if (hasMasuk) {
-          toast.error('Anda sudah melakukan absensi pada periode shift saat ini, silahkan absensi pulang terlebih dulu');
-          setLoading(false);
-          return;
-        }
-      }
-    } catch (err) {
-      console.error("Error checking previous attendance:", err);
-    }
-
-    // Validasi lokasi berdasarkan nama desa dinonaktifkan atas permintaan user
     if (type === 'Masuk') {
-      console.log("Location validation bypassed");
+      if (lastAttendance && lastAttendance.type === 'Masuk') {
+        toast.error('Anda sudah melakukan absensi MASUK. Silakan lakukan absensi PULANG terlebih dahulu sebelum melakukan absensi MASUK kembali.');
+        return;
+      }
+    } else if (type === 'Pulang') {
+      if (!lastAttendance || lastAttendance.type === 'Pulang') {
+        toast.error('Anda belum melakukan absensi MASUK atau sudah melakukan absensi PULANG.');
+        return;
+      }
     }
+
+    setLoading(true);
 
     if (!navigator.onLine) {
       setLoading(false);
@@ -1296,18 +1320,8 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         photoUrl = await getDownloadURL(photoRef);
       } catch (storageErr: any) {
         console.warn("Storage upload error:", storageErr);
-        if (storageErr.code === 'storage/unauthorized') {
-          throw new Error('Gagal mengunggah foto: Izin ditolak. Periksa Firebase Storage Rules.');
-        }
-        
-        if (storageErr.code === 'storage/retry-limit-exceeded') {
-          console.warn("Storage retry limit exceeded, falling back to base64");
-          photoUrl = photo;
-        } else {
-          // Fallback: Use base64 string directly if storage fails
-          console.warn("Falling back to base64 photo due to storage error");
-          photoUrl = photo;
-        }
+        // Fallback: Use base64 string directly if storage fails
+        photoUrl = photo;
       }
 
       // 2. Save attendance to Firestore
@@ -1341,9 +1355,6 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
         }
       } catch (firestoreErr: any) {
         console.error("Firestore attendance error:", firestoreErr);
-        if (firestoreErr.code === 'permission-denied') {
-          throw new Error('Gagal menyimpan data: Izin ditolak. Periksa Firestore Security Rules.');
-        }
         throw new Error('Gagal menyimpan data absensi: ' + (firestoreErr.message || 'Error tidak diketahui'));
       }
 
@@ -1375,7 +1386,7 @@ function AttendanceView({ user, onComplete, fetchNotifications, setView }: any) 
       }
 
       toast.success('Absensi berhasil dicatat');
-      setPhoto(''); // Clear photo after success
+      setPhoto(null); // Clear photo after success
       onComplete();
     } catch (err: any) {
       console.error("Attendance submission error:", err);
@@ -2432,7 +2443,7 @@ function AdminView({ history, permissions, users }: any) {
       </div>
 
       {activeTab === 'dashboard' ? (
-        <AdminDashboard attendanceData={history} users={users} />
+        <AdminDashboard attendanceData={history} permissionsData={permissions} users={users} />
       ) : activeTab === 'settings' ? (
         <div className="space-y-6">
           <Card className="space-y-4">
