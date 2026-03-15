@@ -37,8 +37,10 @@ export default function App() {
   }, []);
 
   const handleLogin = async () => {
+    console.log("Tombol login diklik, NIP:", nip);
     try {
       const response = await axios.get('/api/users');
+      console.log("Response users:", response.data);
       const users = response.data;
       const foundUser = users.find((u: any) => u.nip === nip);
 
@@ -50,6 +52,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Gagal login:", error);
+      alert("Gagal login, cek konsol untuk detail.");
     }
   };
 

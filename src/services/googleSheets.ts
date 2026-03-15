@@ -2,12 +2,11 @@ import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 
 const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
-let formattedKey = rawKey
-  .replace(/\\n/g, '\n')
-  .replace(/\\r/g, '\r')
-  .trim();
+// Replace literal \n with actual newlines, remove carriage returns
+let formattedKey = rawKey.replace(/\\n/g, '\n').replace(/\r/g, '').trim();
 
-if (!formattedKey.startsWith('-----BEGIN')) {
+// Only wrap if it doesn't already have a PEM header
+if (!formattedKey.includes('-----BEGIN')) {
   formattedKey = `-----BEGIN PRIVATE KEY-----\n${formattedKey}\n-----END PRIVATE KEY-----`;
 }
 
