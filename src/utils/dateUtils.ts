@@ -2,32 +2,31 @@
 export const safeToDate = (ts: any): Date => {
   if (!ts) return new Date(NaN);
   
+  if (ts instanceof Date) return ts;
+
+  // Handle Firestore Timestamp objects
   if (typeof ts === 'object' && typeof ts.toDate === 'function') {
     return ts.toDate();
   }
   
+  // Handle Firestore Timestamp-like objects (e.g., from JSON serialization)
+  if (typeof ts === 'object' && (ts.seconds !== undefined || ts._seconds !== undefined)) {
+    const seconds = ts.seconds !== undefined ? ts.seconds : ts._seconds;
+    const nanoseconds = ts.nanoseconds !== undefined ? ts.nanoseconds : (ts._nanoseconds || 0);
+    return new Date(seconds * 1000 + nanoseconds / 1e6);
+  }
+  
+  // Handle numbers (milliseconds or seconds)
   if (typeof ts === 'number') {
-    // If it's a small number, it's probably seconds (Firestore-like)
-    // 1e12 is roughly year 2001 in milliseconds, so anything smaller is likely seconds
     return new Date(ts < 1e12 ? ts * 1000 : ts);
   }
   
-  if (typeof ts === 'object' && ts._seconds !== undefined) {
-    return new Date(ts._seconds * 1000 + (ts._nanoseconds || 0) / 1e6);
-  }
-
-  if (typeof ts === 'object' && ts.seconds !== undefined) {
-    return new Date(ts.seconds * 1000 + (ts.nanoseconds || 0) / 1e6);
-  }
-  
-  const date = new Date(ts);
-  return date;
+  return new Date(ts);
 };
 
 export const formatTimestamp = (ts: any) => {
   const date = safeToDate(ts);
   
-  // Check for invalid date
   if (isNaN(date.getTime())) return '-';
   
   return date.toLocaleString('id-ID', { 
