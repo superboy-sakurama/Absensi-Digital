@@ -1,33 +1,29 @@
-import express from "express";
-import { createServer as createViteServer } from "vite";
-import path from "path";
-import { fileURLToPath } from "url";
+import express from 'express';
+import { getSheetData, addRow, getSettings } from './src/services/googleSheets';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const app = express();
+app.use(express.json());
 
-async function startServer() {
-  const app = express();
-  app.use(express.json({ limit: '50mb' }));
+app.get('/api/users', async (req, res) => {
+  const users = await getSheetData('Users');
+  res.json(users);
+});
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
-  }
+app.get('/api/settings', async (req, res) => {
+  const settings = await getSettings();
+  res.json(settings);
+});
 
-  const PORT = 3000;
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
+app.get('/api/presensi', async (req, res) => {
+  const presensi = await getSheetData('Presensi');
+  res.json(presensi);
+});
 
-startServer();
+app.post('/api/presensi', async (req, res) => {
+  await addRow('Presensi', req.body);
+  res.json({ success: true });
+});
+
+app.listen(3000, '0.0.0.0', () => {
+  console.log('Server running on http://localhost:3000');
+});
