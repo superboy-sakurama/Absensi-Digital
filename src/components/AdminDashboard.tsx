@@ -142,7 +142,7 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
           
           const dayRecords = monthAttendance.filter(att => {
             if (!att.timestamp) return false;
-            const attDate = safeToDate(att.timestamp);
+            const attDate = att.timestamp.toDate ? att.timestamp.toDate() : new Date(att.timestamp);
             return att.user_id === user.id && 
                    attDate.getDate() === day && 
                    attDate.getMonth() === exportMonth - 1 && 
