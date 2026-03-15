@@ -37,6 +37,7 @@ import {
 } from './lib/firebase';
 import AdminDashboard from './components/AdminDashboard';
 import { getHighAccuracyLocation } from './utils/locationUtils';
+import { formatTimestamp, safeToDate } from './utils/dateUtils';
 
 const getDeviceId = () => {
   let deviceId = localStorage.getItem('deviceId');
@@ -74,31 +75,7 @@ export const Card = ({ children, className }: any) => (
   </div>
 );
 
-const formatTimestamp = (ts: any) => {
-  if (!ts) return '-';
-  let date: Date;
-  if (typeof ts === 'object' && 'toDate' in ts) {
-    date = ts.toDate();
-  } else if (typeof ts === 'number') {
-    // If it's a small number, it's probably seconds
-    date = new Date(ts < 1e12 ? ts * 1000 : ts);
-  } else {
-    date = new Date(ts);
-  }
-  
-  // Check for invalid date
-  if (isNaN(date.getTime())) return '-';
-  
-  return date.toLocaleString('id-ID', { 
-    timeZone: 'Asia/Jakarta',
-    day: 'numeric',
-    month: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
-};
+// Remove local formatTimestamp as it is now imported from dateUtils
 
 // --- Main App ---
 
@@ -987,7 +964,7 @@ function NotificationsView({ notifications, setView, fetchNotifications }: any) 
               <div className={`w-2 h-2 rounded-full ${n.read ? 'bg-zinc-300' : 'bg-red-500'}`} />
               <div>
                 <p className="text-sm">{n.message}</p>
-                <p className="text-xs text-zinc-400">{n.timestamp?.toDate().toLocaleString()}</p>
+                <p className="text-xs text-zinc-400">{formatTimestamp(n.timestamp)}</p>
               </div>
             </Card>
           ))
@@ -1582,7 +1559,7 @@ function RekapView({ user }: { user: User }) {
 
   const formatDateForInput = (date: any) => {
     if (!date) return '';
-    const d = date?.toDate ? date.toDate() : new Date(date);
+    const d = safeToDate(date);
     return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
   };
 
@@ -1694,18 +1671,18 @@ function RekapView({ user }: { user: User }) {
   const calculateDuration = (item: Attendance, allData: Attendance[]) => {
     if (item.type !== 'Pulang') return null;
     
-    const pulangDate = item.timestamp?.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
+    const pulangDate = safeToDate(item.timestamp);
     const dayStr = pulangDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
     
     const masukRecord = allData.find(d => 
       d.user_id === item.user_id && 
       d.type === 'Masuk' && 
-      (d.timestamp?.toDate ? d.timestamp.toDate() : new Date(d.timestamp)).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }) === dayStr
+      safeToDate(d.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }) === dayStr
     );
     
     if (!masukRecord) return null;
     
-    const masukDate = masukRecord.timestamp?.toDate ? masukRecord.timestamp.toDate() : new Date(masukRecord.timestamp);
+    const masukDate = safeToDate(masukRecord.timestamp);
     const diffMs = pulangDate.getTime() - masukDate.getTime();
     if (diffMs <= 0) return null;
     
@@ -1722,7 +1699,7 @@ function RekapView({ user }: { user: User }) {
       const userRecords: Record<string, any> = {};
 
       data.forEach(item => {
-        const d = item.timestamp?.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
+        const d = safeToDate(item.timestamp);
         const yyyymmdd = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(d);
         const [year, month, day] = yyyymmdd.split('-');
         const dateStr = `${day}-${month}-${year}`;
@@ -1872,7 +1849,7 @@ function RekapView({ user }: { user: User }) {
               </thead>
               <tbody className="divide-y divide-zinc-50">
                 {data.map((item, idx) => {
-                  const d = item.timestamp?.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
+                  const d = safeToDate(item.timestamp);
                   const shift = getShiftInfo(d);
                   const duration = calculateDuration(item, data);
                   return (

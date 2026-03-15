@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { Attendance, User } from '../types';
 import { Card } from '../App';
 import { formatAttendanceMatrix } from '../utils/attendanceUtils';
+import { safeToDate, formatTimestamp, formatTimeOnly, formatDateOnly } from '../utils/dateUtils';
 
 // Fix for default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -53,11 +54,7 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
 
   const todayAttendance = attendanceData.filter(item => {
     if (!item.timestamp) return false;
-    const itemDate = item.timestamp.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
-    // Handle case where item.timestamp might be seconds as a number
-    const finalDate = (typeof item.timestamp === 'number' && item.timestamp < 1e12) 
-      ? new Date(item.timestamp * 1000) 
-      : itemDate;
+    const finalDate = safeToDate(item.timestamp);
     return finalDate >= today && finalDate < tomorrow;
   });
 
@@ -69,10 +66,7 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
 
   // Count permissions for today
   permissionsData?.forEach((p: any) => {
-    const pDateRaw = p.timestamp?.toDate ? p.timestamp.toDate() : new Date(p.timestamp);
-    const pDate = (typeof p.timestamp === 'number' && p.timestamp < 1e12)
-      ? new Date(p.timestamp * 1000)
-      : pDateRaw;
+    const pDate = safeToDate(p.timestamp);
       
     if (pDate >= today && pDate < tomorrow && (p.status === 'Disetujui' || p.status === 'Approved' || p.status === 'approved')) {
       if (p.type === 'Sakit') stats.sakit++;
@@ -236,10 +230,8 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
       const snapshot = await getDocs(q);
         const data = snapshot.docs.map(d => {
           const docData = d.data();
-          const ts = docData.timestamp;
-          const date = ts?.toDate ? ts.toDate() : new Date(ts);
           return {
-            Tanggal: date.toLocaleString('id-ID'),
+            Tanggal: formatTimestamp(docData.timestamp),
             Tipe: docData.type,
             Status: docData.status,
             Lokasi: docData.latitude && docData.longitude ? `${docData.latitude}, ${docData.longitude}` : '-',
@@ -336,11 +328,9 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
               </div>
               <div className="space-y-2">
                 {userAttendance.map(a => {
-                  const ts = a.timestamp;
-                  const date = ts?.toDate ? ts.toDate() : new Date(ts);
                   return (
                     <div key={a.id} className="flex justify-between text-sm">
-                      <span>{date.toLocaleDateString()}</span>
+                      <span>{formatDateOnly(a.timestamp)}</span>
                       <span>{a.type} - {a.status}</span>
                     </div>
                   );
@@ -381,8 +371,6 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <Polygon positions={villagePolygon} color="blue" />
           {todayAttendance.map((item, idx) => {
-            const ts = item.timestamp;
-            const date = ts?.toDate ? ts.toDate() : new Date(ts);
             return (
               <Marker 
                 key={idx} 
@@ -393,7 +381,7 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
                   <div>
                     <p className="font-bold">{item.name}</p>
                     <p className="text-sm">{item.type} - {item.status}</p>
-                    <p className="text-xs">{date.toLocaleTimeString()}</p>
+                    <p className="text-xs">{formatTimeOnly(item.timestamp)}</p>
                   </div>
                 </Popup>
               </Marker>
@@ -406,15 +394,13 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
         <h3 className="text-lg font-bold mb-4">Aktivitas Terbaru Hari Ini</h3>
         <div className="space-y-4">
           {todayAttendance.slice(0, 5).map((item, idx) => {
-            const ts = item.timestamp;
-            const date = ts?.toDate ? ts.toDate() : new Date(ts);
             return (
               <div key={idx} className="flex justify-between items-center border-b pb-2 cursor-pointer hover:bg-zinc-50" onClick={() => setMapCenter([item.latitude, item.longitude])}>
                 <div>
                   <p className="font-bold">{item.name}</p>
                   <p className="text-sm text-zinc-500">{item.type} - {item.status}</p>
                 </div>
-                <p className="text-sm text-zinc-400">{date.toLocaleTimeString()}</p>
+                <p className="text-sm text-zinc-400">{formatTimeOnly(item.timestamp)}</p>
               </div>
             );
           })}
