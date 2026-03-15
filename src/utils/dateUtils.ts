@@ -21,20 +21,13 @@ export const safeToDate = (ts: any): Date => {
     return new Date(ts < 1e12 ? ts * 1000 : ts);
   }
   
-  const date = new Date(ts);
-  if (isNaN(date.getTime())) {
-    console.warn('safeToDate failed to parse:', ts, 'Type:', typeof ts);
-  }
-  return date;
+  return new Date(ts);
 };
 
 export const formatTimestamp = (ts: any) => {
   const date = safeToDate(ts);
   
-  if (isNaN(date.getTime()) || date.getFullYear() < 2000) {
-    console.warn('Invalid timestamp:', ts);
-    return '-';
-  }
+  if (isNaN(date.getTime())) return '-';
   
   return date.toLocaleString('id-ID', { 
     timeZone: 'Asia/Jakarta',
@@ -49,7 +42,7 @@ export const formatTimestamp = (ts: any) => {
 
 export const formatTimeOnly = (ts: any) => {
   const date = safeToDate(ts);
-  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return '-';
+  if (isNaN(date.getTime())) return '-';
   return date.toLocaleTimeString('id-ID', {
     timeZone: 'Asia/Jakarta',
     hour: '2-digit',
@@ -60,7 +53,7 @@ export const formatTimeOnly = (ts: any) => {
 
 export const formatDateOnly = (ts: any) => {
   const date = safeToDate(ts);
-  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return '-';
+  if (isNaN(date.getTime())) return '-';
   return date.toLocaleDateString('id-ID', {
     timeZone: 'Asia/Jakarta',
     day: 'numeric',
