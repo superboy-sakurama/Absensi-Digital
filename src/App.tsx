@@ -37,6 +37,7 @@ import {
 } from './lib/firebase';
 import AdminDashboard from './components/AdminDashboard';
 import { getHighAccuracyLocation } from './utils/locationUtils';
+import { getOnlineTime } from './utils/timeUtils';
 import { formatTimestamp, safeToDate } from './utils/dateUtils';
 
 const getDeviceId = () => {
@@ -1359,7 +1360,7 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
           address: address || '',
           photo: photoUrl,
           status,
-          timestamp: serverTimestamp()
+          timestamp: await getOnlineTime()
         };
 
         await addDoc(collection(db, 'attendance'), attendanceData);
@@ -1370,7 +1371,7 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
             user_id: user.id,
             message: `Absensi ${type} berhasil dicatat pada ${new Date().toLocaleString()}`,
             read: false,
-            timestamp: serverTimestamp()
+            timestamp: await getOnlineTime()
           });
           fetchNotifications(); // Refresh notifications
         } catch (notifErr) {
