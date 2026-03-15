@@ -76,8 +76,28 @@ export const Card = ({ children, className }: any) => (
 
 const formatTimestamp = (ts: any) => {
   if (!ts) return '-';
-  if (typeof ts === 'object' && 'toDate' in ts) return ts.toDate().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-  return new Date(ts).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+  let date: Date;
+  if (typeof ts === 'object' && 'toDate' in ts) {
+    date = ts.toDate();
+  } else if (typeof ts === 'number') {
+    // If it's a small number, it's probably seconds
+    date = new Date(ts < 1e12 ? ts * 1000 : ts);
+  } else {
+    date = new Date(ts);
+  }
+  
+  // Check for invalid date
+  if (isNaN(date.getTime())) return '-';
+  
+  return date.toLocaleString('id-ID', { 
+    timeZone: 'Asia/Jakarta',
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 };
 
 // --- Main App ---

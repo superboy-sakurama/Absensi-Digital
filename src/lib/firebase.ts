@@ -102,32 +102,63 @@ export const orderBy = (field: string, dir: string) => ({ type: 'orderBy', field
 export const limit = (num: number) => ({ type: 'limit', num });
 
 const convertTimestamps = (obj: any): any => {
-  if (!obj) return obj;
-  if (typeof obj === 'object') {
-    if (obj._seconds !== undefined) {
-      const date = new Date(obj._seconds * 1000);
+  if (!obj || typeof obj !== 'object') {
+    // Handle numbers that might be seconds
+    if (typeof obj === 'number' && obj > 1e9 && obj < 1e11) {
+      const date = new Date(obj * 1000);
       return { 
-        _seconds: obj._seconds,
-        _nanoseconds: obj._nanoseconds || 0,
-        toDate: () => date,
-        toMillis: () => date.getTime()
+        _seconds: obj, 
+        _nanoseconds: 0, 
+        toDate: () => date, 
+        toMillis: () => date.getTime() 
       };
     }
-    for (const key in obj) {
-      if (key === 'timestamp' && typeof obj[key] === 'string') {
-        const date = new Date(obj[key]);
-        if (!isNaN(date.getTime())) {
-          obj[key] = {
-            _seconds: Math.floor(date.getTime() / 1000),
-            _nanoseconds: (date.getTime() % 1000) * 1e6,
-            toDate: () => date,
-            toMillis: () => date.getTime()
-          };
-          continue;
-        }
+    return obj;
+  }
+
+  // Handle Firestore Timestamp object (both _seconds and seconds)
+  if (obj._seconds !== undefined || obj.seconds !== undefined) {
+    const seconds = obj._seconds !== undefined ? obj._seconds : obj.seconds;
+    const nanos = obj._nanoseconds !== undefined ? obj._nanoseconds : (obj.nanoseconds || 0);
+    const date = new Date(seconds * 1000 + Math.floor(nanos / 1e6));
+    return {
+      _seconds: seconds,
+      _nanoseconds: nanos,
+      toDate: () => date,
+      toMillis: () => date.getTime()
+    };
+  }
+
+  // Handle Date objects
+  if (obj instanceof Date) {
+    return {
+      _seconds: Math.floor(obj.getTime() / 1000),
+      _nanoseconds: (obj.getTime() % 1000) * 1e6,
+      toDate: () => obj,
+      toMillis: () => obj.getTime()
+    };
+  }
+
+  // Recurse through arrays and objects
+  if (Array.isArray(obj)) {
+    return obj.map(convertTimestamps);
+  }
+
+  for (const key in obj) {
+    // Special case for common date string keys if they are strings
+    if (typeof obj[key] === 'string' && (key === 'timestamp' || key.includes('_date') || key.includes('Time'))) {
+      const date = new Date(obj[key]);
+      if (!isNaN(date.getTime())) {
+        obj[key] = {
+          _seconds: Math.floor(date.getTime() / 1000),
+          _nanoseconds: (date.getTime() % 1000) * 1e6,
+          toDate: () => date,
+          toMillis: () => date.getTime()
+        };
+        continue;
       }
-      obj[key] = convertTimestamps(obj[key]);
     }
+    obj[key] = convertTimestamps(obj[key]);
   }
   return obj;
 };
@@ -190,9 +221,17 @@ export const getDocs = async (queryRef: any) => {
 
 const prepareData = (obj: any): any => {
   if (!obj) return obj;
+  if (obj instanceof Date) {
+    const ms = obj.getTime();
+    if (isNaN(ms)) return null;
+    return { _seconds: Math.floor(ms / 1000), _nanoseconds: (ms % 1000) * 1e6 };
+  }
   if (typeof obj === 'object') {
     if (typeof obj.toDate === 'function') {
-      return { _seconds: Math.floor(obj.toDate().getTime() / 1000) };
+      const date = obj.toDate();
+      const ms = date.getTime();
+      if (isNaN(ms)) return null;
+      return { _seconds: Math.floor(ms / 1000), _nanoseconds: (ms % 1000) * 1e6 };
     }
     if (Array.isArray(obj)) {
       return obj.map(prepareData);
