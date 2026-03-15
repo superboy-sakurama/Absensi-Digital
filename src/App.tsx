@@ -2454,18 +2454,14 @@ function AdminView({ history, permissions, users }: any) {
 
     if (mode === 'daily') {
       dataToExport = dataToExport.filter((item: any) => {
-        const dateObj = item.timestamp && typeof item.timestamp === 'object' && 'toDate' in item.timestamp
-          ? (item.timestamp as any).toDate()
-          : new Date(item.timestamp || item.start_date);
+        const dateObj = safeToDate(item.timestamp || item.start_date);
         const itemDate = dateObj.toISOString().split('T')[0];
         return itemDate === exportDate;
       });
       filename += `_Harian_${exportDate}`;
     } else if (mode === 'monthly') {
       dataToExport = dataToExport.filter((item: any) => {
-        const dateObj = item.timestamp && typeof item.timestamp === 'object' && 'toDate' in item.timestamp
-          ? (item.timestamp as any).toDate()
-          : new Date(item.timestamp || item.start_date);
+        const dateObj = safeToDate(item.timestamp || item.start_date);
         const itemMonth = dateObj.toISOString().slice(0, 7);
         return itemMonth === exportMonth;
       });
@@ -2482,7 +2478,7 @@ function AdminView({ history, permissions, users }: any) {
     const cleanedData = dataToExport.map(({ photo, ...rest }: any) => {
       const formatted = { ...rest };
       if (formatted.timestamp && typeof formatted.timestamp === 'object' && 'toDate' in formatted.timestamp) {
-        formatted.timestamp = (formatted.timestamp as any).toDate().toLocaleString('id-ID');
+        formatted.timestamp = formatTimestamp(formatted.timestamp);
       } else if (formatted.timestamp) {
         formatted.timestamp = new Date(formatted.timestamp).toLocaleString('id-ID');
       }
@@ -2512,8 +2508,8 @@ function AdminView({ history, permissions, users }: any) {
         valB = b.status?.toLowerCase() || '';
       } else {
         // date
-        const dateA = a.timestamp && typeof a.timestamp === 'object' && 'toDate' in a.timestamp ? a.timestamp.toDate() : new Date(a.timestamp || a.start_date);
-        const dateB = b.timestamp && typeof b.timestamp === 'object' && 'toDate' in b.timestamp ? b.timestamp.toDate() : new Date(b.timestamp || b.start_date);
+        const dateA = safeToDate(a.timestamp || a.start_date);
+        const dateB = safeToDate(b.timestamp || b.start_date);
         valA = dateA.getTime();
         valB = dateB.getTime();
       }

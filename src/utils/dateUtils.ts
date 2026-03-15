@@ -27,8 +27,8 @@ export const safeToDate = (ts: any): Date => {
 export const formatTimestamp = (ts: any) => {
   const date = safeToDate(ts);
   
-  // Check for invalid date
-  if (isNaN(date.getTime())) return '-';
+  // Check for invalid date OR date before 2000 (assuming 1970 is invalid)
+  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return '-';
   
   return date.toLocaleString('id-ID', { 
     timeZone: 'Asia/Jakarta',
@@ -43,7 +43,7 @@ export const formatTimestamp = (ts: any) => {
 
 export const formatTimeOnly = (ts: any) => {
   const date = safeToDate(ts);
-  if (isNaN(date.getTime())) return '-';
+  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return '-';
   return date.toLocaleTimeString('id-ID', {
     timeZone: 'Asia/Jakarta',
     hour: '2-digit',
@@ -54,7 +54,7 @@ export const formatTimeOnly = (ts: any) => {
 
 export const formatDateOnly = (ts: any) => {
   const date = safeToDate(ts);
-  if (isNaN(date.getTime())) return '-';
+  if (isNaN(date.getTime()) || date.getFullYear() < 2000) return '-';
   return date.toLocaleDateString('id-ID', {
     timeZone: 'Asia/Jakarta',
     day: 'numeric',
