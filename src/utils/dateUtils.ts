@@ -4,23 +4,28 @@ export const safeToDate = (ts: any): Date => {
   
   if (ts instanceof Date) return ts;
 
+  // Handle Firestore Timestamp objects
   if (typeof ts === 'object' && typeof ts.toDate === 'function') {
     return ts.toDate();
   }
   
+  // Handle Firestore Timestamp-like objects (e.g., from JSON serialization)
+  if (typeof ts === 'object' && (ts.seconds !== undefined || ts._seconds !== undefined)) {
+    const seconds = ts.seconds !== undefined ? ts.seconds : ts._seconds;
+    const nanoseconds = ts.nanoseconds !== undefined ? ts.nanoseconds : (ts._nanoseconds || 0);
+    return new Date(seconds * 1000 + nanoseconds / 1e6);
+  }
+  
+  // Handle numbers (milliseconds or seconds)
   if (typeof ts === 'number') {
     return new Date(ts < 1e12 ? ts * 1000 : ts);
   }
   
-  if (typeof ts === 'object') {
-    const seconds = ts._seconds !== undefined ? ts._seconds : ts.seconds;
-    const nanoseconds = ts._nanoseconds !== undefined ? ts._nanoseconds : (ts.nanoseconds || 0);
-    if (seconds !== undefined) {
-      return new Date(seconds * 1000 + nanoseconds / 1e6);
-    }
+  const date = new Date(ts);
+  if (isNaN(date.getTime())) {
+    console.warn('safeToDate failed to parse:', ts, 'Type:', typeof ts);
   }
-  
-  return new Date(ts);
+  return date;
 };
 
 export const formatTimestamp = (ts: any) => {
