@@ -1,9 +1,19 @@
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 
+const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
+let formattedKey = rawKey
+  .replace(/\\n/g, '\n')
+  .replace(/\\r/g, '\r')
+  .trim();
+
+if (!formattedKey.startsWith('-----BEGIN')) {
+  formattedKey = `-----BEGIN PRIVATE KEY-----\n${formattedKey}\n-----END PRIVATE KEY-----`;
+}
+
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  key: formattedKey,
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
