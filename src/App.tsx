@@ -1291,6 +1291,26 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
       return;
     }
 
+    // Location validation based on village/workplace
+    if (type === 'Masuk' || type === 'Pulang') {
+      if (user.village && user.village.trim() !== '') {
+        const villageLower = user.village.toLowerCase().trim();
+        const addressLower = (address || '').toLowerCase();
+        
+        // Handle 'induk' as a special case for the main health center
+        const searchString = villageLower === 'induk' ? 'kalitengah' : villageLower;
+        
+        // Remove common prefixes to improve matching (e.g., "Desa Dibee" -> "dibee")
+        const cleanVillage = searchString.replace(/^(desa|kelurahan|kecamatan|puskesmas|pustu|ponkesdes)\s+/i, '').trim();
+
+        if (!addressLower.includes(cleanVillage)) {
+          toast.error(`Lokasi GPS tidak memuat nama tempat kerja (${user.village}). Anda dialihkan ke halaman Izin.`);
+          setView('permission');
+          return;
+        }
+      }
+    }
+
     // Double check-in prevention using history
     const userHistory = history.filter((h: any) => h.user_id === user.id);
     const lastAttendance = userHistory[0];
