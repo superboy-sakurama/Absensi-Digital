@@ -1326,97 +1326,110 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
       return;
     }
 
-    try {
-      // 1. Upload photo to Firebase Storage
-      let photoUrl = '';
+    // Capture current state values for background task
+    const currentPhoto = photo;
+    const currentLocation = location;
+    const currentAddress = address;
+    const currentType = type;
+    const currentStatus = status;
+
+    // Show success immediately and return to dashboard
+    toast.success('Absensi sedang diproses di latar belakang...', { duration: 3000 });
+    setPhoto(null);
+    onComplete();
+
+    // Run upload and save in background
+    (async () => {
       try {
-        const timestamp = Date.now();
-        const photoRef = ref(storage, `attendance/${user.id}/${timestamp}.jpg`);
-        
-        // Ensure photo is a valid data URL
-        if (!photo.startsWith('data:image/')) {
-          throw new Error('Format foto tidak valid');
-        }
-
-        // Upload to Firebase Storage
-        await uploadString(photoRef, photo, 'data_url');
-        photoUrl = await getDownloadURL(photoRef);
-      } catch (storageErr: any) {
-        console.warn("Storage upload error:", storageErr);
-        // Fallback: Use base64 string directly if storage fails
-        photoUrl = photo;
-      }
-
-      // 2. Save attendance to Firestore
-      try {
-        const attendanceData = {
-          user_id: user.id,
-          name: user.name || 'Pegawai',
-          nip: user.nip || '-',
-          type,
-          latitude: location.lat,
-          longitude: location.lng,
-          address: address || '',
-          photo: photoUrl,
-          status,
-          timestamp: serverTimestamp()
-        };
-
-        await addDoc(collection(db, 'attendance'), attendanceData);
-
-        // Add notification
+        // 1. Upload photo to Firebase Storage
+        let photoUrl = '';
         try {
-          await addDoc(collection(db, 'notifications'), {
-            user_id: user.id,
-            message: `Absensi ${type} berhasil dicatat pada ${new Date().toLocaleString()}`,
-            read: false,
-            timestamp: serverTimestamp()
-          });
-          fetchNotifications(); // Refresh notifications
-        } catch (notifErr) {
-          console.error("Notification error:", notifErr);
-        }
-      } catch (firestoreErr: any) {
-        console.error("Firestore attendance error:", firestoreErr);
-        throw new Error('Gagal menyimpan data absensi: ' + (firestoreErr.message || 'Error tidak diketahui'));
-      }
-
-      // Send to Webhook if configured
-      try {
-        const settingsDoc = await getDoc(doc(db, 'settings', 'general'));
-        if (settingsDoc.exists() && settingsDoc.data().webhookUrl) {
-          const webhookUrl = settingsDoc.data().webhookUrl.trim();
-          if (webhookUrl) {
-            fetch(webhookUrl, {
-              method: 'POST',
-              mode: 'no-cors',
-              keepalive: true,
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify({
-                recordType: 'Absensi',
-                name: user.name || 'Pegawai',
-                nip: user.nip || '-',
-                type: type,
-                status,
-                address: address || '',
-                photo: photoUrl
-              })
-            }).catch(err => console.error("Webhook fetch error:", err));
+          const timestamp = Date.now();
+          const photoRef = ref(storage, `attendance/${user.id}/${timestamp}.jpg`);
+          
+          // Ensure photo is a valid data URL
+          if (!currentPhoto.startsWith('data:image/')) {
+            throw new Error('Format foto tidak valid');
           }
-        }
-      } catch (webhookErr) {
-        console.error("Webhook error:", webhookErr);
-      }
 
-      toast.success('Absensi berhasil dicatat');
-      setPhoto(null); // Clear photo after success
-      onComplete();
-    } catch (err: any) {
-      console.error("Attendance submission error:", err);
-      toast.error(err.message || 'Gagal mencatat absensi');
-    } finally {
-      setLoading(false);
-    }
+          // Upload to Firebase Storage
+          await uploadString(photoRef, currentPhoto, 'data_url');
+          photoUrl = await getDownloadURL(photoRef);
+        } catch (storageErr: any) {
+          console.warn("Storage upload error:", storageErr);
+          // Fallback: Use base64 string directly if storage fails
+          photoUrl = currentPhoto;
+        }
+
+        // 2. Save attendance to Firestore
+        try {
+          const attendanceData = {
+            user_id: user.id,
+            name: user.name || 'Pegawai',
+            nip: user.nip || '-',
+            type: currentType,
+            latitude: currentLocation.lat,
+            longitude: currentLocation.lng,
+            address: currentAddress || '',
+            photo: photoUrl,
+            status: currentStatus,
+            timestamp: serverTimestamp()
+          };
+
+          await addDoc(collection(db, 'attendance'), attendanceData);
+
+          // Add notification
+          try {
+            await addDoc(collection(db, 'notifications'), {
+              user_id: user.id,
+              message: `Absensi ${currentType} berhasil dicatat pada ${new Date().toLocaleString()}`,
+              read: false,
+              timestamp: serverTimestamp()
+            });
+            if (fetchNotifications) fetchNotifications(); // Refresh notifications
+          } catch (notifErr) {
+            console.error("Notification error:", notifErr);
+          }
+        } catch (firestoreErr: any) {
+          console.error("Firestore attendance error:", firestoreErr);
+          throw new Error('Gagal menyimpan data absensi: ' + (firestoreErr.message || 'Error tidak diketahui'));
+        }
+
+        // Send to Webhook if configured
+        try {
+          const settingsDoc = await getDoc(doc(db, 'settings', 'general'));
+          if (settingsDoc.exists() && settingsDoc.data().webhookUrl) {
+            const webhookUrl = settingsDoc.data().webhookUrl.trim();
+            if (webhookUrl) {
+              fetch(webhookUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                keepalive: true,
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                  recordType: 'Absensi',
+                  name: user.name || 'Pegawai',
+                  nip: user.nip || '-',
+                  type: currentType,
+                  status: currentStatus,
+                  address: currentAddress || '',
+                  photo: photoUrl
+                })
+              }).catch(err => console.error("Webhook fetch error:", err));
+            }
+          }
+        } catch (webhookErr) {
+          console.error("Webhook error:", webhookErr);
+        }
+
+        toast.success(`Absensi ${currentType} berhasil dicatat!`);
+      } catch (err: any) {
+        console.error("Attendance submission error:", err);
+        toast.error(err.message || 'Gagal mencatat absensi di latar belakang');
+      } finally {
+        setLoading(false);
+      }
+    })();
   };
 
   return (
@@ -1942,8 +1955,14 @@ function HistoryView({ history, indexErrorUrl, isBuilding }: { history: Attendan
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {history.map((item, idx) => (
           <Card key={`${item.id}-${idx}`} className="overflow-hidden p-0">
-            <div className="aspect-video relative">
-              <img src={item.photo} className="w-full h-full object-cover" alt="Attendance" referrerPolicy="no-referrer" />
+            <div className="aspect-video relative bg-zinc-100">
+              {item.photo ? (
+                <img src={item.photo} className="w-full h-full object-cover" alt="Attendance" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-zinc-400">
+                  <Camera size={48} className="opacity-20" />
+                </div>
+              )}
               <div className="absolute top-4 left-4">
                 <span className={cn(
                   "px-3 py-1 rounded-full text-xs font-bold shadow-lg",
@@ -1986,7 +2005,7 @@ function HistoryView({ history, indexErrorUrl, isBuilding }: { history: Attendan
 function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuilding }: any) {
   const [formData, setFormData] = useState({ type: 'Sakit', reason: '', start_date: '', end_date: '' });
   const [loading, setLoading] = useState(false);
-  const [photo, setPhoto] = useState('');
+  const [photo, setPhoto] = useState<string | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
@@ -2115,127 +2134,140 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
       return;
     }
 
-    try {
-      // Upload photo
-      let photoUrl = '';
+    // Capture current state values for background task
+    const currentPhoto = photo;
+    const currentLocation = location;
+    const currentAddress = address;
+    const currentFormData = { ...formData };
+
+    // Show success immediately and return to dashboard
+    toast.success('Permohonan izin sedang diproses di latar belakang...', { duration: 3000 });
+    setFormData({ type: 'Sakit', reason: '', start_date: '', end_date: '' });
+    setPhoto(null);
+    onComplete();
+
+    // Run upload and save in background
+    (async () => {
       try {
-        const timestamp = Date.now();
-        const photoRef = ref(storage, `permissions/${user.id}/${timestamp}.jpg`);
-        
-        if (!photo.startsWith('data:image/')) {
-          throw new Error('Format foto tidak valid');
+        // Upload photo
+        let photoUrl = '';
+        try {
+          const timestamp = Date.now();
+          const photoRef = ref(storage, `permissions/${user.id}/${timestamp}.jpg`);
+          
+          if (!currentPhoto.startsWith('data:image/')) {
+            throw new Error('Format foto tidak valid');
+          }
+
+          // Upload to Firebase Storage
+          await uploadString(photoRef, currentPhoto, 'data_url');
+          photoUrl = await getDownloadURL(photoRef);
+        } catch (storageErr: any) {
+          console.warn("Storage upload error:", storageErr);
+          if (storageErr.code === 'storage/unauthorized') {
+            throw new Error('Gagal mengunggah foto: Izin ditolak. Periksa Firebase Storage Rules.');
+          }
+          
+          if (storageErr.code === 'storage/retry-limit-exceeded') {
+            console.warn("Storage retry limit exceeded, falling back to base64");
+            photoUrl = currentPhoto;
+          } else {
+            // Fallback: Use base64 string directly if storage fails
+            console.warn("Falling back to base64 photo due to storage error");
+            photoUrl = currentPhoto;
+          }
         }
 
-        // Upload to Firebase Storage
-        await uploadString(photoRef, photo, 'data_url');
-        photoUrl = await getDownloadURL(photoRef);
-      } catch (storageErr: any) {
-        console.warn("Storage upload error:", storageErr);
-        if (storageErr.code === 'storage/unauthorized') {
-          throw new Error('Gagal mengunggah foto: Izin ditolak. Periksa Firebase Storage Rules.');
-        }
+        const batch = writeBatch(db);
         
-        if (storageErr.code === 'storage/retry-limit-exceeded') {
-          console.warn("Storage retry limit exceeded, falling back to base64");
-          photoUrl = photo;
-        } else {
-          // Fallback: Use base64 string directly if storage fails
-          console.warn("Falling back to base64 photo due to storage error");
-          photoUrl = photo;
-        }
-      }
-
-      const batch = writeBatch(db);
-      
-      // 1. Buat Record Izin (Langsung Approved)
-      const permissionRef = doc(collection(db, 'permissions'));
-      const permissionData = {
-        user_id: user.id,
-        name: user.name || 'Pegawai',
-        nip: user.nip || '-',
-        type: formData.type,
-        reason: formData.reason,
-        start_date: formData.start_date,
-        end_date: formData.end_date,
-        status: 'approved',
-        latitude: location?.lat || 0,
-        longitude: location?.lng || 0,
-        address: address || '',
-        photo: photoUrl,
-        timestamp: serverTimestamp()
-      };
-      batch.set(permissionRef, permissionData);
-
-      // 2. Buat Record Absensi untuk setiap hari dalam rentang tanggal
-      const start = new Date(formData.start_date);
-      const end = new Date(formData.end_date);
-      let current = new Date(start);
-      const now = new Date(); // Waktu saat absensi/izin diajukan
-      
-      while (current <= end) {
-        const attendanceRef = doc(collection(db, 'attendance'));
-        // Set waktu menyesuaikan saat absensi (izin/dinas luar) diajukan
-        const recordDate = new Date(current);
-        recordDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-        
-        batch.set(attendanceRef, {
+        // 1. Buat Record Izin (Langsung Approved)
+        const permissionRef = doc(collection(db, 'permissions'));
+        const permissionData = {
           user_id: user.id,
           name: user.name || 'Pegawai',
           nip: user.nip || '-',
-          type: formData.type, // 'Sakit', 'Cuti', atau 'Dinas Luar'
-          status: 'Izin Terverifikasi',
-          address: address || 'Izin Terverifikasi',
-          latitude: location?.lat || 0,
-          longitude: location?.lng || 0,
-          timestamp: Timestamp.fromDate(recordDate),
-          photo: photoUrl
-        });
+          type: currentFormData.type,
+          reason: currentFormData.reason,
+          start_date: currentFormData.start_date,
+          end_date: currentFormData.end_date,
+          status: 'approved',
+          latitude: currentLocation?.lat || 0,
+          longitude: currentLocation?.lng || 0,
+          address: currentAddress || '',
+          photo: photoUrl,
+          timestamp: serverTimestamp()
+        };
+        batch.set(permissionRef, permissionData);
+
+        // 2. Buat Record Absensi untuk setiap hari dalam rentang tanggal
+        const start = new Date(currentFormData.start_date);
+        const end = new Date(currentFormData.end_date);
+        let current = new Date(start);
+        const now = new Date(); // Waktu saat absensi/izin diajukan
         
-        current.setDate(current.getDate() + 1);
-      }
-
-      await batch.commit();
-
-      // Send to Webhook if configured
-      try {
-        const settingsDoc = await getDoc(doc(db, 'settings', 'general'));
-        if (settingsDoc.exists() && settingsDoc.data().webhookUrl) {
-          const webhookUrl = settingsDoc.data().webhookUrl.trim();
-          if (webhookUrl) {
-            fetch(webhookUrl, {
-              method: 'POST',
-              mode: 'no-cors',
-              keepalive: true,
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify({
-                recordType: 'Izin',
-                name: user.name || 'Pegawai',
-                nip: user.nip || '-',
-                type: formData.type,
-                status: 'Approved',
-                address: address || '',
-                photo: photoUrl
-              })
-            }).catch(err => console.error("Webhook fetch error:", err));
-          }
+        while (current <= end) {
+          const attendanceRef = doc(collection(db, 'attendance'));
+          // Set waktu menyesuaikan saat absensi (izin/dinas luar) diajukan
+          const recordDate = new Date(current);
+          recordDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+          
+          batch.set(attendanceRef, {
+            user_id: user.id,
+            name: user.name || 'Pegawai',
+            nip: user.nip || '-',
+            type: currentFormData.type, // 'Sakit', 'Cuti', atau 'Dinas Luar'
+            status: 'Izin Terverifikasi',
+            address: currentAddress || 'Izin Terverifikasi',
+            latitude: currentLocation?.lat || 0,
+            longitude: currentLocation?.lng || 0,
+            timestamp: Timestamp.fromDate(recordDate),
+            photo: photoUrl
+          });
+          
+          current.setDate(current.getDate() + 1);
         }
-      } catch (webhookErr) {
-        console.error("Webhook error:", webhookErr);
-      }
 
-      toast.success('Permohonan izin berhasil dikirim dan langsung terekap di absensi');
-      setFormData({ type: 'Sakit', reason: '', start_date: '', end_date: '' });
-      onComplete();
-    } catch (err: any) {
-      console.error("Permission submission error:", err);
-      if (err.code === 'permission-denied') {
-        toast.error('Gagal mengirim: Izin ditolak. Periksa Firestore Security Rules.');
-      } else {
-        toast.error('Gagal mengirim permohonan: ' + (err.message || 'Error tidak diketahui'));
+        await batch.commit();
+
+        // Send to Webhook if configured
+        try {
+          const settingsDoc = await getDoc(doc(db, 'settings', 'general'));
+          if (settingsDoc.exists() && settingsDoc.data().webhookUrl) {
+            const webhookUrl = settingsDoc.data().webhookUrl.trim();
+            if (webhookUrl) {
+              fetch(webhookUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                keepalive: true,
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                  recordType: 'Izin',
+                  name: user.name || 'Pegawai',
+                  nip: user.nip || '-',
+                  type: currentFormData.type,
+                  status: 'Approved',
+                  address: currentAddress || '',
+                  photo: photoUrl
+                })
+              }).catch(err => console.error("Webhook fetch error:", err));
+            }
+          }
+        } catch (webhookErr) {
+          console.error("Webhook error:", webhookErr);
+        }
+
+        toast.success(`Permohonan izin ${currentFormData.type} berhasil dikirim dan langsung terekap di absensi!`);
+      } catch (err: any) {
+        console.error("Permission submission error:", err);
+        if (err.code === 'permission-denied') {
+          toast.error('Gagal mengirim di latar belakang: Izin ditolak. Periksa Firestore Security Rules.');
+        } else {
+          toast.error('Gagal mengirim permohonan di latar belakang: ' + (err.message || 'Error tidak diketahui'));
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
+    })();
   };
 
   return (
@@ -2345,7 +2377,7 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
               )}
 
               {photo && (
-                <Button type="button" onClick={() => setPhoto('')} variant="outline" className="w-full mb-4">Ulangi Foto</Button>
+                <Button type="button" onClick={() => setPhoto(null)} variant="outline" className="w-full mb-4">Ulangi Foto</Button>
               )}
             </div>
 

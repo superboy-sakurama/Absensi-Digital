@@ -142,7 +142,7 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
           
           const dayRecords = monthAttendance.filter(att => {
             if (!att.timestamp) return false;
-            const attDate = safeToDate(att.timestamp);
+            const attDate = att.timestamp.toDate ? att.timestamp.toDate() : new Date(att.timestamp);
             return att.user_id === user.id && 
                    attDate.getDate() === day && 
                    attDate.getMonth() === exportMonth - 1 && 
@@ -256,17 +256,15 @@ export default function AdminDashboard({ attendanceData, permissionsData, users 
 
   const resetDevice = async () => {
     if (!selectedUser) return;
-    if (window.confirm(`Reset perangkat untuk ${selectedUser.name}?`)) {
-      try {
-        await updateDoc(doc(db, 'users', selectedUser.id), {
-          deviceId: null,
-          deviceInfo: null
-        });
-        toast.success(`Perangkat untuk ${selectedUser.name} berhasil direset.`);
-      } catch (err) {
-        console.error("Error resetting device:", err);
-        toast.error('Gagal mereset perangkat.');
-      }
+    try {
+      await updateDoc(doc(db, 'users', selectedUser.id), {
+        deviceId: null,
+        deviceInfo: null
+      });
+      toast.success(`Perangkat untuk ${selectedUser.name} berhasil direset.`);
+    } catch (err) {
+      console.error("Error resetting device:", err);
+      toast.error('Gagal mereset perangkat.');
     }
   };
 
