@@ -114,6 +114,18 @@ const convertTimestamps = (obj: any): any => {
       };
     }
     for (const key in obj) {
+      if (key === 'timestamp' && typeof obj[key] === 'string') {
+        const date = new Date(obj[key]);
+        if (!isNaN(date.getTime())) {
+          obj[key] = {
+            _seconds: Math.floor(date.getTime() / 1000),
+            _nanoseconds: (date.getTime() % 1000) * 1e6,
+            toDate: () => date,
+            toMillis: () => date.getTime()
+          };
+          continue;
+        }
+      }
       obj[key] = convertTimestamps(obj[key]);
     }
   }
@@ -153,9 +165,16 @@ export const getDoc = async (docRef: any) => {
 };
 
 export const getDocs = async (queryRef: any) => {
+  const preparedArgs = (queryRef.args || []).map((arg: any) => {
+    if (arg.type === 'where') {
+      return { ...arg, val: prepareData(arg.val) };
+    }
+    return arg;
+  });
+
   const res = await callApi('get_docs', { 
     path: queryRef.col ? queryRef.col.path : queryRef.path,
-    args: queryRef.args || []
+    args: preparedArgs
   });
   const docs = (res || []).map((d: any, index: number) => ({
     id: d.id || `doc_${Date.now()}_${index}`,
