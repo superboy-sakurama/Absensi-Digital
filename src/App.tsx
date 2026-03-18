@@ -1191,7 +1191,12 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
       try {
         const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
         const data = await response.json();
-        if (data && data.display_name) {
+        if (data && data.address) {
+          const { hamlet, village, suburb, city_district, town, city, county, state, country } = data.address;
+          const regionParts = [hamlet, village, suburb, city_district, town, city, county, state, country].filter(Boolean);
+          const uniqueRegionParts = Array.from(new Set(regionParts));
+          setAddress(uniqueRegionParts.join(', '));
+        } else if (data && data.display_name) {
           setAddress(data.display_name);
         } else {
           setAddress('Lokasi tidak dikenal');
@@ -2047,7 +2052,12 @@ function PermissionView({ user, permissions, onComplete, indexErrorUrl, isBuildi
       try {
         const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
         const data = await response.json();
-        if (data && data.display_name) {
+        if (data && data.address) {
+          const { hamlet, village, suburb, city_district, town, city, county, state, country } = data.address;
+          const regionParts = [hamlet, village, suburb, city_district, town, city, county, state, country].filter(Boolean);
+          const uniqueRegionParts = Array.from(new Set(regionParts));
+          setAddress(uniqueRegionParts.join(', '));
+        } else if (data && data.display_name) {
           setAddress(data.display_name);
         } else {
           setAddress('Lokasi tidak dikenal');
