@@ -1290,6 +1290,10 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
       toast.error('Gagal mendapatkan lokasi GPS. Pastikan GPS aktif.');
       return;
     }
+    if (isLocating || !address) {
+      toast.error('Sedang memuat data wilayah dari GPS. Harap tunggu sebentar.');
+      return;
+    }
     
     if (!user) {
       toast.error('Sesi pengguna tidak valid. Silakan login ulang.');
@@ -1542,10 +1546,10 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
 
         <Button 
           onClick={handleSubmit} 
-          disabled={loading || !photo || !location}
+          disabled={loading || !photo || !location || isLocating || !address}
           className="w-full mt-8 py-4 text-lg rounded-2xl shadow-lg shadow-emerald-100"
         >
-          {loading ? 'Mengirim...' : 'Kirim Absensi'}
+          {loading ? 'Mengirim...' : (isLocating || !address) ? 'Memuat Lokasi...' : 'Kirim Absensi'}
         </Button>
       </Card>
     </motion.div>
