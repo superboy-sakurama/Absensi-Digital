@@ -37,7 +37,6 @@ import {
 } from './lib/firebase';
 import AdminDashboard from './components/AdminDashboard';
 import { getHighAccuracyLocation } from './utils/locationUtils';
-import { formatTimestamp, safeToDate } from './utils/dateUtils';
 
 const getDeviceId = () => {
   let deviceId = localStorage.getItem('deviceId');
@@ -75,7 +74,11 @@ export const Card = ({ children, className }: any) => (
   </div>
 );
 
-// Remove local formatTimestamp as it is now imported from dateUtils
+const formatTimestamp = (ts: any) => {
+  if (!ts) return '-';
+  if (typeof ts === 'object' && 'toDate' in ts) return ts.toDate().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+  return new Date(ts).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+};
 
 // --- Main App ---
 
@@ -964,7 +967,7 @@ function NotificationsView({ notifications, setView, fetchNotifications }: any) 
               <div className={`w-2 h-2 rounded-full ${n.read ? 'bg-zinc-300' : 'bg-red-500'}`} />
               <div>
                 <p className="text-sm">{n.message}</p>
-                <p className="text-xs text-zinc-400">{formatTimestamp(n.timestamp)}</p>
+                <p className="text-xs text-zinc-400">{n.timestamp?.toDate().toLocaleString()}</p>
               </div>
             </Card>
           ))
@@ -1024,14 +1027,8 @@ function DashboardView({ user, history, notifications, setView }: any) {
           <div className="flex items-center gap-3 mt-1">
             <p className="text-zinc-500 font-medium">{today}</p>
             <span className="w-1 h-1 bg-zinc-300 rounded-full" />
-            <div className="flex items-center gap-2 px-3 py-0.5 bg-emerald-50 rounded-full">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-              <p className="text-emerald-600 font-bold font-mono">{timeStr}</p>
-            </div>
+            <p className="text-emerald-600 font-bold font-mono">{timeStr}</p>
           </div>
-          <p className="text-zinc-400 text-xs mt-1 font-medium uppercase tracking-wider">
-            {shift.name} ({shift.range})
-          </p>
           {user.village && (
             <p className="text-emerald-600 font-medium text-sm mt-1 flex items-center gap-1">
               <MapPin size={14} /> Lokasi Kerja: {user.village}
@@ -1158,16 +1155,7 @@ function MenuCard({ icon, title, desc, onClick, color }: any) {
 }
 
 function AttendanceView({ user, history, onComplete, fetchNotifications, setView }: any) {
-  const [currentTime, setCurrentTime] = useState(new Date());
   const [type, setType] = useState<'Masuk' | 'Pulang' | 'Dinas Luar'>('Masuk');
-  
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const timeStr = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const dateStr = currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const [photo, setPhoto] = useState<string | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const [address, setAddress] = useState<string | null>(null);
@@ -1309,17 +1297,6 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
 
     setLoading(true);
 
-    const shift = getShiftInfo(new Date());
-    let status = 'Hadir';
-    if (type === 'Masuk' && shift.lateThreshold !== null) {
-      const now = new Date();
-      const jakartaNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-      const currentMinutes = jakartaNow.getHours() * 60 + jakartaNow.getMinutes();
-      if (currentMinutes > shift.lateThreshold) {
-        status = 'Terlambat';
-      }
-    }
-
     if (!navigator.onLine) {
       setLoading(false);
       toast.error('Tidak ada koneksi internet. Pastikan perangkat Anda terhubung ke internet.');
@@ -1358,7 +1335,7 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
           longitude: location.lng,
           address: address || '',
           photo: photoUrl,
-          status,
+          status: 'Hadir',
           timestamp: serverTimestamp()
         };
 
@@ -1397,7 +1374,7 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
                 name: user.name || 'Pegawai',
                 nip: user.nip || '-',
                 type: type,
-                status,
+                status: 'Hadir',
                 address: address || '',
                 photo: photoUrl
               })
@@ -1422,16 +1399,7 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
   return (
     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-xl mx-auto space-y-6">
       <Card>
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">Ambil Absensi</h2>
-          <div className="text-right flex flex-col items-end">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-              <p className="text-emerald-600 font-bold font-mono text-xl">{timeStr}</p>
-            </div>
-            <p className="text-[10px] text-zinc-400 font-medium uppercase tracking-widest">{dateStr}</p>
-          </div>
-        </div>
+        <h2 className="text-2xl font-bold mb-6">Ambil Absensi</h2>
         
         <div className="flex gap-2 mb-6 p-1 bg-zinc-100 rounded-xl">
           {(['Masuk', 'Pulang', 'Dinas Luar'] as const).map(t => (
@@ -1515,38 +1483,10 @@ function AttendanceView({ user, history, onComplete, fetchNotifications, setView
 }
 
 const getShiftInfo = (date: Date) => {
-  // Use Asia/Jakarta time for shift calculation
-  const jakartaTime = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-  const hour = jakartaTime.getHours();
-  const minute = jakartaTime.getMinutes();
-  const timeValue = hour * 60 + minute;
-
-  // Pagi: 06.00 - 09.00. Late if > 08.00
-  if (timeValue >= 360 && timeValue < 540) {
-    return { 
-      name: 'Shift Pagi', 
-      range: '06.00 - 09.00', 
-      lateThreshold: 480 // 08:00
-    };
-  }
-  // Sore: 13.00 - 15.00. Late if > 14.30
-  if (timeValue >= 780 && timeValue < 900) {
-    return { 
-      name: 'Shift Sore', 
-      range: '13.00 - 15.00', 
-      lateThreshold: 870 // 14:30
-    };
-  }
-  // Malam: 19.30 - 21.00. Late if > 20.30
-  if (timeValue >= 1170 && timeValue < 1260) {
-    return { 
-      name: 'Shift Malam', 
-      range: '19.30 - 21.00', 
-      lateThreshold: 1230 // 20:30
-    };
-  }
-  
-  return { name: 'Luar Shift', range: '-', lateThreshold: null };
+  const hour = date.getHours();
+  if (hour >= 7 && hour < 14) return { name: 'Shift Pagi', range: '07.00 - 14.00' };
+  if (hour >= 14 && hour < 20) return { name: 'Shift Siang', range: '14.00 - 20.00' };
+  return { name: 'Shift Malam', range: '20.00 - 07.00' };
 };
 
 function RekapView({ user }: { user: User }) {
@@ -1559,7 +1499,7 @@ function RekapView({ user }: { user: User }) {
 
   const formatDateForInput = (date: any) => {
     if (!date) return '';
-    const d = safeToDate(date);
+    const d = date?.toDate ? date.toDate() : new Date(date);
     return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
   };
 
@@ -1580,11 +1520,10 @@ function RekapView({ user }: { user: User }) {
   }, [user.role]);
 
   useEffect(() => {
-    const today = new Date();
-    const todayStr = formatDateForInput(today);
-    
     if (user.role === 'admin') {
+      const today = new Date();
       if (selectedUserId === 'all') {
+        const todayStr = formatDateForInput(today);
         setStartDate(todayStr);
         setEndDate(todayStr);
         fetchData(todayStr, todayStr, 'all');
@@ -1597,17 +1536,8 @@ function RekapView({ user }: { user: User }) {
         setEndDate(endStr);
         fetchData(startStr, endStr, selectedUserId);
       }
-    } else {
-      // For regular users, fetch last 10 days by default
-      const tenDaysAgo = new Date(today);
-      tenDaysAgo.setDate(today.getDate() - 10);
-      const startStr = formatDateForInput(tenDaysAgo);
-      const endStr = formatDateForInput(today);
-      setStartDate(startStr);
-      setEndDate(endStr);
-      fetchData(startStr, endStr, user.id);
     }
-  }, [selectedUserId, user.role, user.id]);
+  }, [selectedUserId, user.role]);
 
   const fetchData = async (startStr: string, endStr: string, userId: string) => {
     if (!startStr || !endStr) return;
@@ -1668,29 +1598,6 @@ function RekapView({ user }: { user: User }) {
     fetchData(startDate, endDate, selectedUserId);
   };
 
-  const calculateDuration = (item: Attendance, allData: Attendance[]) => {
-    if (item.type !== 'Pulang') return null;
-    
-    const pulangDate = safeToDate(item.timestamp);
-    const dayStr = pulangDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-    
-    const masukRecord = allData.find(d => 
-      d.user_id === item.user_id && 
-      d.type === 'Masuk' && 
-      safeToDate(d.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }) === dayStr
-    );
-    
-    if (!masukRecord) return null;
-    
-    const masukDate = safeToDate(masukRecord.timestamp);
-    const diffMs = pulangDate.getTime() - masukDate.getTime();
-    if (diffMs <= 0) return null;
-    
-    const hours = Math.floor(diffMs / (1000 * 60 * 60));
-    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-    return `${hours}j ${minutes}m`;
-  };
-
   const exportToExcel = () => {
     if (data.length === 0) return toast.error('Tidak ada data untuk diekspor');
     
@@ -1699,7 +1606,7 @@ function RekapView({ user }: { user: User }) {
       const userRecords: Record<string, any> = {};
 
       data.forEach(item => {
-        const d = safeToDate(item.timestamp);
+        const d = item.timestamp?.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
         const yyyymmdd = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(d);
         const [year, month, day] = yyyymmdd.split('-');
         const dateStr = `${day}-${month}-${year}`;
@@ -1714,14 +1621,11 @@ function RekapView({ user }: { user: User }) {
           };
         }
 
-        const duration = calculateDuration(item, data);
-        const entry = duration ? `${item.type} (${duration})` : item.type;
-
         if (!userRecords[userId][dateStr]) {
-          userRecords[userId][dateStr] = entry;
+          userRecords[userId][dateStr] = item.type;
         } else {
           if (!userRecords[userId][dateStr].includes(item.type)) {
-             userRecords[userId][dateStr] += `, ${entry}`;
+             userRecords[userId][dateStr] += `, ${item.type}`;
           }
         }
       });
@@ -1750,18 +1654,14 @@ function RekapView({ user }: { user: User }) {
       XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
       XLSX.writeFile(wb, `Rekap_Absensi_Semua_User_${startDate}_${endDate}.xlsx`);
     } else {
-      const exportData = data.map(item => {
-        const duration = calculateDuration(item, data);
-        return {
-          Nama: item.name || '-',
-          NIP: item.nip || '-',
-          Tanggal: formatTimestamp(item.timestamp),
-          Tipe: item.type,
-          Status: item.status,
-          Durasi: duration || '-',
-          Lokasi: item.address || `${item.latitude}, ${item.longitude}`
-        };
-      });
+      const exportData = data.map(item => ({
+        Nama: item.name || '-',
+        NIP: item.nip || '-',
+        Tanggal: formatTimestamp(item.timestamp),
+        Tipe: item.type,
+        Status: item.type === 'Pulang' ? 'Pulang' : item.status,
+        Lokasi: item.address || `${item.latitude}, ${item.longitude}`
+      }));
 
       const ws = XLSX.utils.json_to_sheet(exportData);
       const wb = XLSX.utils.book_new();
@@ -1843,15 +1743,13 @@ function RekapView({ user }: { user: User }) {
                   <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Shift</th>
                   <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Tipe</th>
                   <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Status</th>
-                  <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Durasi</th>
                   <th className="p-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Lokasi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-50">
                 {data.map((item, idx) => {
-                  const d = safeToDate(item.timestamp);
+                  const d = item.timestamp?.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
                   const shift = getShiftInfo(d);
-                  const duration = calculateDuration(item, data);
                   return (
                   <tr key={`${item.id}-${idx}`} className="hover:bg-zinc-50/50 transition-colors">
                     {user.role === 'admin' && (
@@ -1873,15 +1771,7 @@ function RekapView({ user }: { user: User }) {
                         {item.type}
                       </span>
                     </td>
-                    <td className="p-4">
-                      <span className={cn(
-                        "px-2 py-0.5 rounded text-[10px] font-bold",
-                        item.status === 'Terlambat' ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                      )}>
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="p-4 text-sm font-mono text-zinc-600">{duration || '-'}</td>
+                    <td className="p-4 text-sm text-zinc-600">{item.type === 'Pulang' ? 'Pulang' : item.status}</td>
                     <td className="p-4 text-xs text-zinc-500 max-w-[200px] truncate" title={item.address}>
                       {item.address || `${item.latitude}, ${item.longitude}`}
                     </td>
@@ -2499,17 +2389,17 @@ function AdminView({ history, permissions, users }: any) {
   const getFilteredAndSortedData = (data: any[]) => {
     let filteredData = data.filter(item => {
       const searchLower = searchTerm.toLowerCase();
-      return (String(item.name || '').toLowerCase().includes(searchLower) || String(item.nip || '').toLowerCase().includes(searchLower));
+      return (item.name?.toLowerCase().includes(searchLower) || item.nip?.toLowerCase().includes(searchLower));
     });
 
     filteredData.sort((a, b) => {
       let valA, valB;
       if (sortBy === 'name') {
-        valA = String(a.name || '').toLowerCase();
-        valB = String(b.name || '').toLowerCase();
+        valA = a.name?.toLowerCase() || '';
+        valB = b.name?.toLowerCase() || '';
       } else if (sortBy === 'status') {
-        valA = String(a.status || '').toLowerCase();
-        valB = String(b.status || '').toLowerCase();
+        valA = a.status?.toLowerCase() || '';
+        valB = b.status?.toLowerCase() || '';
       } else {
         // date
         const dateA = a.timestamp && typeof a.timestamp === 'object' && 'toDate' in a.timestamp ? a.timestamp.toDate() : new Date(a.timestamp || a.start_date);

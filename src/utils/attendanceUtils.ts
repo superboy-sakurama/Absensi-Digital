@@ -1,13 +1,12 @@
 import { Attendance, User } from '../types';
-import { safeToDate } from './dateUtils';
 
 export const formatAttendanceMatrix = (attendanceData: Attendance[], users: User[]) => {
-  const dates = Array.from(new Set(attendanceData.map(a => safeToDate(a.timestamp).toLocaleDateString()))).sort();
+  const dates = Array.from(new Set(attendanceData.map(a => new Date(a.timestamp.toDate()).toLocaleDateString()))).sort();
   
   const matrix = users.map(user => {
     const row: any = { NIP: user.nip, Nama: user.name };
     dates.forEach(date => {
-      const dayAttendance = attendanceData.filter(a => a.user_id === user.id && safeToDate(a.timestamp).toLocaleDateString() === date);
+      const dayAttendance = attendanceData.filter(a => a.user_id === user.id && new Date(a.timestamp.toDate()).toLocaleDateString() === date);
       
       const masuk = dayAttendance.find(a => a.type === 'Masuk');
       const pulang = dayAttendance.find(a => a.type === 'Pulang');
@@ -18,8 +17,8 @@ export const formatAttendanceMatrix = (attendanceData: Attendance[], users: User
       if (masuk) {
         status = masuk.status;
         if (pulang) {
-          let masukTime = safeToDate(masuk.timestamp);
-          let pulangTime = safeToDate(pulang.timestamp);
+          let masukTime = masuk.timestamp.toDate();
+          let pulangTime = pulang.timestamp.toDate();
           
           if (pulangTime < masukTime) {
             pulangTime.setDate(pulangTime.getDate() + 1);
