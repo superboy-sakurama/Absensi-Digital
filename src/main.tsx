@@ -6,8 +6,9 @@ import { registerSW } from 'virtual:pwa-register';
 
 const updateSW = registerSW({
   onNeedRefresh() {
-    // Auto-update without confirm to comply with iframe restrictions
-    updateSW(true);
+    if (confirm('Versi baru tersedia. Muat ulang aplikasi?')) {
+      updateSW(true);
+    }
   },
   onOfflineReady() {
     console.log('Aplikasi siap digunakan secara offline.');
