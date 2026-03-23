@@ -248,27 +248,10 @@ function getDocs(path, args) {
   if (args && args.length > 0) {
     args.forEach(arg => {
       if (arg.type === 'where') {
-        let val = arg.val;
-        // Convert timestamp object to ISO string for comparison
-        if (val && typeof val === 'object' && val._seconds !== undefined) {
-          val = new Date(val._seconds * 1000).toISOString();
-        }
-
         data = data.filter(d => {
-          let fieldVal = d[arg.field];
-          
-          // Special handling for timestamp comparisons
-          if (arg.field === 'timestamp' && fieldVal) {
-            try {
-              fieldVal = new Date(fieldVal).toISOString();
-            } catch (e) {}
-          }
-
-          if (arg.op === '==') return fieldVal === val;
-          if (arg.op === '>=') return fieldVal >= val;
-          if (arg.op === '<=') return fieldVal <= val;
-          if (arg.op === '>') return fieldVal > val;
-          if (arg.op === '<') return fieldVal < val;
+          if (arg.op === '==') return d[arg.field] === arg.val;
+          if (arg.op === '>') return d[arg.field] > arg.val;
+          if (arg.op === '<') return d[arg.field] < arg.val;
           return true;
         });
       } else if (arg.type === 'orderBy') {

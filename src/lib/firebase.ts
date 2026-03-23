@@ -220,22 +220,11 @@ export const writeBatch = (dbInstance: any) => {
 };
 
 export const Timestamp = {
-  now: () => {
-    const date = new Date();
-    return { 
-      _seconds: Math.floor(date.getTime() / 1000), 
-      _nanoseconds: (date.getTime() % 1000) * 1e6,
-      toDate: () => date 
-    };
-  },
-  fromDate: (date: Date) => ({ 
-    _seconds: Math.floor(date.getTime() / 1000), 
-    _nanoseconds: (date.getTime() % 1000) * 1e6,
-    toDate: () => date 
-  }),
+  now: () => ({ toDate: () => new Date() }),
+  fromDate: (date: Date) => ({ toDate: () => date }),
 };
 
-export const serverTimestamp = () => Timestamp.now();
+export const serverTimestamp = () => ({ toDate: () => new Date() });
 
 // Mock Storage
 export const storage = {};
