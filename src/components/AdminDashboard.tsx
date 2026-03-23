@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { Attendance, User } from '../types';
 import { Card } from '../App';
 import { formatAttendanceMatrix } from '../utils/attendanceUtils';
+import { safeToDate, formatTimestamp, formatTimeOnly, formatDateOnly } from '../utils/dateUtils';
 
 // Fix for default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -38,7 +39,7 @@ function MapUpdater({ center }: { center: [number, number] }) {
   return null;
 }
 
-export default function AdminDashboard({ attendanceData, users }: { attendanceData: Attendance[], users: User[] }) {
+export default function AdminDashboard({ attendanceData, permissionsData, users }: { attendanceData: Attendance[], permissionsData: any[], users: User[] }) {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userAttendance, setUserAttendance] = useState<Attendance[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -53,16 +54,24 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
 
   const todayAttendance = attendanceData.filter(item => {
     if (!item.timestamp) return false;
-    const itemDate = item.timestamp.toDate ? item.timestamp.toDate() : new Date(item.timestamp);
-    return itemDate >= today && itemDate < tomorrow;
+    const finalDate = safeToDate(item.timestamp);
+    return finalDate >= today && finalDate < tomorrow;
   });
 
   const stats = { masuk: 0, dinasLuar: 0, sakit: 0, cuti: 0 };
   todayAttendance.forEach(item => {
     if (item.type === 'Masuk') stats.masuk++;
     else if (item.type === 'Dinas Luar') stats.dinasLuar++;
-    else if (item.type === 'Sakit') stats.sakit++;
-    else if (item.type === 'Cuti') stats.cuti++;
+  });
+
+  // Count permissions for today
+  permissionsData?.forEach((p: any) => {
+    const pDate = safeToDate(p.timestamp);
+      
+    if (pDate >= today && pDate < tomorrow && (p.status === 'Disetujui' || p.status === 'Approved' || p.status === 'approved')) {
+      if (p.type === 'Sakit') stats.sakit++;
+      else if (p.type === 'Cuti' || p.type === 'Izin') stats.cuti++;
+    }
   });
 
   const fetchUserAttendance = async (userId: string) => {
@@ -132,7 +141,8 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
           // For now, let's just count actual attendance.
           
           const dayRecords = monthAttendance.filter(att => {
-            const attDate = att.timestamp.toDate();
+            if (!att.timestamp) return false;
+            const attDate = att.timestamp.toDate ? att.timestamp.toDate() : new Date(att.timestamp);
             return att.user_id === user.id && 
                    attDate.getDate() === day && 
                    attDate.getMonth() === exportMonth - 1 && 
@@ -218,16 +228,16 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
       );
 
       const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(d => {
-        const docData = d.data();
-        return {
-          Tanggal: new Date(docData.timestamp.toDate()).toLocaleString('id-ID'),
-          Tipe: docData.type,
-          Status: docData.status,
-          Lokasi: docData.latitude && docData.longitude ? `${docData.latitude}, ${docData.longitude}` : '-',
-          Catatan: docData.notes || '-'
-        };
-      });
+        const data = snapshot.docs.map(d => {
+          const docData = d.data();
+          return {
+            Tanggal: formatTimestamp(docData.timestamp),
+            Tipe: docData.type,
+            Status: docData.status,
+            Lokasi: docData.latitude && docData.longitude ? `${docData.latitude}, ${docData.longitude}` : '-',
+            Catatan: docData.notes || '-'
+          };
+        });
 
       if (data.length === 0) {
         toast.error('Tidak ada data pada rentang tanggal tersebut');
@@ -246,17 +256,15 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
 
   const resetDevice = async () => {
     if (!selectedUser) return;
-    if (window.confirm(`Reset perangkat untuk ${selectedUser.name}?`)) {
-      try {
-        await updateDoc(doc(db, 'users', selectedUser.id), {
-          deviceId: null,
-          deviceInfo: null
-        });
-        toast.success(`Perangkat untuk ${selectedUser.name} berhasil direset.`);
-      } catch (err) {
-        console.error("Error resetting device:", err);
-        toast.error('Gagal mereset perangkat.');
-      }
+    try {
+      await updateDoc(doc(db, 'users', selectedUser.id), {
+        deviceId: null,
+        deviceInfo: null
+      });
+      toast.success(`Perangkat untuk ${selectedUser.name} berhasil direset.`);
+    } catch (err) {
+      console.error("Error resetting device:", err);
+      toast.error('Gagal mereset perangkat.');
     }
   };
 
@@ -317,12 +325,14 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
                 </button>
               </div>
               <div className="space-y-2">
-                {userAttendance.map(a => (
-                  <div key={a.id} className="flex justify-between text-sm">
-                    <span>{new Date(a.timestamp.toDate()).toLocaleDateString()}</span>
-                    <span>{a.type} - {a.status}</span>
-                  </div>
-                ))}
+                {userAttendance.map(a => {
+                  return (
+                    <div key={a.id} className="flex justify-between text-sm">
+                      <span>{formatDateOnly(a.timestamp)}</span>
+                      <span>{a.type} - {a.status}</span>
+                    </div>
+                  );
+                })}
               </div>
               <div className="mt-4 flex gap-2">
                 <input type="date" onChange={e => setDateRange({...dateRange, start: e.target.value})} className="border rounded-lg p-2" />
@@ -358,36 +368,40 @@ export default function AdminDashboard({ attendanceData, users }: { attendanceDa
           <MapUpdater center={mapCenter} />
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <Polygon positions={villagePolygon} color="blue" />
-          {todayAttendance.map((item, idx) => (
-            <Marker 
-              key={idx} 
-              position={[item.latitude, item.longitude]} 
-              icon={item.type === 'Masuk' ? greenIcon : yellowIcon}
-            >
-              <Popup>
-                <div>
-                  <p className="font-bold">{item.name}</p>
-                  <p className="text-sm">{item.type} - {item.status}</p>
-                  <p className="text-xs">{new Date(item.timestamp.toDate()).toLocaleTimeString()}</p>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+          {todayAttendance.map((item, idx) => {
+            return (
+              <Marker 
+                key={idx} 
+                position={[item.latitude, item.longitude]} 
+                icon={item.type === 'Masuk' ? greenIcon : yellowIcon}
+              >
+                <Popup>
+                  <div>
+                    <p className="font-bold">{item.name}</p>
+                    <p className="text-sm">{item.type} - {item.status}</p>
+                    <p className="text-xs">{formatTimeOnly(item.timestamp)}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
         </MapContainer>
       </div>
 
       <Card>
         <h3 className="text-lg font-bold mb-4">Aktivitas Terbaru Hari Ini</h3>
         <div className="space-y-4">
-          {todayAttendance.slice(0, 5).map((item, idx) => (
-            <div key={idx} className="flex justify-between items-center border-b pb-2 cursor-pointer hover:bg-zinc-50" onClick={() => setMapCenter([item.latitude, item.longitude])}>
-              <div>
-                <p className="font-bold">{item.name}</p>
-                <p className="text-sm text-zinc-500">{item.type} - {item.status}</p>
+          {todayAttendance.slice(0, 5).map((item, idx) => {
+            return (
+              <div key={idx} className="flex justify-between items-center border-b pb-2 cursor-pointer hover:bg-zinc-50" onClick={() => setMapCenter([item.latitude, item.longitude])}>
+                <div>
+                  <p className="font-bold">{item.name}</p>
+                  <p className="text-sm text-zinc-500">{item.type} - {item.status}</p>
+                </div>
+                <p className="text-sm text-zinc-400">{formatTimeOnly(item.timestamp)}</p>
               </div>
-              <p className="text-sm text-zinc-400">{new Date(item.timestamp.toDate()).toLocaleTimeString()}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Card>
     </div>

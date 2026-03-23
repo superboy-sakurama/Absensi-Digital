@@ -63,7 +63,7 @@ export const signOut = async (authInstance: any) => {
   notifyAuthListeners(null);
 };
 
-export const sendPasswordResetEmail = async (authInstance: any, email: string) => {
+export const sendPasswordResetEmail = async (authInstance: any, email: string, actionCodeSettings?: any) => {
   await callApi('reset_password', { email });
 };
 
@@ -149,9 +149,58 @@ export const getDoc = async (docRef: any) => {
 export const getDocs = async (queryRef: any) => {
   const res = await callApi('get_docs', { 
     path: queryRef.col ? queryRef.col.path : queryRef.path,
-    args: queryRef.args || []
+    args: [] // Do not send args to backend because backend filtering is broken for timestamps and types
   });
-  const docs = (res || []).map((d: any, index: number) => ({
+  
+  let filteredRes = res || [];
+  
+  // Apply filters locally to handle cases where the Apps Script backend might miss them
+  // (e.g. >=, <=, or type mismatches like string vs number)
+  const args = queryRef.args || [];
+  args.forEach((arg: any) => {
+    if (arg.type === 'where') {
+      filteredRes = filteredRes.filter((d: any) => {
+        let fieldVal = d[arg.field];
+        let argVal = arg.val;
+        
+        // Handle timestamps
+        if (fieldVal && fieldVal._seconds !== undefined) {
+          fieldVal = fieldVal._seconds;
+        } else if (typeof fieldVal === 'string' && !isNaN(Date.parse(fieldVal))) {
+          fieldVal = new Date(fieldVal).getTime() / 1000;
+        }
+        
+        if (argVal && typeof argVal.toDate === 'function') {
+          argVal = argVal.toDate().getTime() / 1000;
+        } else if (argVal instanceof Date) {
+          argVal = argVal.getTime() / 1000;
+        }
+        
+        // Handle string vs number mismatch (e.g. NIP)
+        if (arg.op === '==') return String(fieldVal) === String(argVal);
+        if (arg.op === '>') return fieldVal > argVal;
+        if (arg.op === '<') return fieldVal < argVal;
+        if (arg.op === '>=') return fieldVal >= argVal;
+        if (arg.op === '<=') return fieldVal <= argVal;
+        return true;
+      });
+    } else if (arg.type === 'orderBy') {
+      filteredRes.sort((a: any, b: any) => {
+        let valA = a[arg.field];
+        let valB = b[arg.field];
+        
+        if (valA && valA._seconds !== undefined) valA = valA._seconds;
+        if (valB && valB._seconds !== undefined) valB = valB._seconds;
+        
+        if (arg.dir === 'desc') return valA < valB ? 1 : -1;
+        return valA > valB ? 1 : -1;
+      });
+    } else if (arg.type === 'limit') {
+      filteredRes = filteredRes.slice(0, arg.num);
+    }
+  });
+
+  const docs = filteredRes.map((d: any, index: number) => ({
     id: d.id || `doc_${Date.now()}_${index}`,
     data: () => convertTimestamps(d),
     exists: () => true
