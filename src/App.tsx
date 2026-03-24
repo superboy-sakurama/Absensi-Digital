@@ -537,6 +537,13 @@ function LoginView({ onSwitch, onForgot, setView }: any) {
     setLoading(true);
     const trimmedNip = nip.trim();
     try {
+      // Validate NIP against 'pegawai' spreadsheet
+      const qPegawai = query(collection(db, 'pegawai'), where('nip', '==', trimmedNip));
+      const pegawaiSnapshot = await getDocs(qPegawai);
+      if (pegawaiSnapshot.empty) {
+        throw new Error('NIP tidak terdaftar di database pegawai. Anda tidak dapat login.');
+      }
+
       // Find email by NIP
       const q = query(collection(db, 'users'), where('nip', '==', trimmedNip));
       const querySnapshot = await getDocs(q);
@@ -659,6 +666,13 @@ function ForgotPasswordView({ onSuccess, onBack }: any) {
     setLoading(true);
     const trimmedNip = nip.trim();
     try {
+      // Validate NIP against 'pegawai' spreadsheet
+      const qPegawai = query(collection(db, 'pegawai'), where('nip', '==', trimmedNip));
+      const pegawaiSnapshot = await getDocs(qPegawai);
+      if (pegawaiSnapshot.empty) {
+        throw new Error('NIP tidak terdaftar di database pegawai.');
+      }
+
       // Find email by NIP
       const q = query(collection(db, 'users'), where('nip', '==', trimmedNip));
       const querySnapshot = await getDocs(q);
@@ -762,6 +776,13 @@ function RegisterView({ onSuccess, onSwitch }: any) {
     try {
       if (isAdmin && formData.secretCode !== 'Mastri123') {
         throw new Error('Kode rahasia admin salah.');
+      }
+
+      // Validate NIP against 'pegawai' spreadsheet
+      const qPegawai = query(collection(db, 'pegawai'), where('nip', '==', trimmedNip));
+      const pegawaiSnapshot = await getDocs(qPegawai);
+      if (pegawaiSnapshot.empty) {
+        throw new Error('NIP tidak terdaftar di database pegawai. Anda tidak dapat mendaftar.');
       }
 
       // Check if NIP already exists
@@ -2432,7 +2453,7 @@ function AdminView({ history, permissions, users }: any) {
       </div>
 
       {activeTab === 'dashboard' ? (
-        <AdminDashboard attendanceData={history} users={users} />
+        <AdminDashboard attendanceData={history} permissionsData={permissions} users={users} />
       ) : activeTab === 'settings' ? (
         <div className="space-y-6">
           <Card className="space-y-4">
