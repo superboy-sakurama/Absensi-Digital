@@ -72,7 +72,8 @@ export const updatePassword = async (user: any, newPassword: string) => {
 };
 
 export const reauthenticateWithCredential = async (user: any, credential: any) => {
-  // Mock success
+  // Call login to verify the old password
+  await callApi('login', { email: credential.email, password: credential.password });
 };
 
 export class EmailAuthProvider {

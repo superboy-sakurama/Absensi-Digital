@@ -570,12 +570,12 @@ function LoginView({ onSwitch, onForgot, setView }: any) {
       try {
         await signInWithEmailAndPassword(auth, email, password);
       } catch (authErr: any) {
-        if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
+        if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential' || authErr.message?.includes('salah')) {
           throw new Error('Password salah.');
-        } else if (authErr.code === 'auth/user-not-found') {
+        } else if (authErr.code === 'auth/user-not-found' || authErr.message?.includes('terdaftar')) {
           throw new Error('NIP anda belum terdaftar silahkan lakukan pendaftaran.');
         } else {
-          throw new Error('Gagal masuk. Periksa NIP dan password Anda.');
+          throw new Error(authErr.message || 'Gagal masuk. Periksa NIP dan password Anda.');
         }
       }
       
@@ -696,10 +696,10 @@ function ForgotPasswordView({ onSuccess, onBack }: any) {
       try {
         await sendPasswordResetEmail(auth, email, actionCodeSettings);
       } catch (authErr: any) {
-        if (authErr.code === 'auth/user-not-found') {
+        if (authErr.code === 'auth/user-not-found' || authErr.message?.includes('tidak ditemukan')) {
           throw new Error('NIP anda belum terdaftar silahkan lakukan pendaftaran.');
         } else {
-          throw new Error('Gagal mengirim email reset. Silakan coba lagi nanti.');
+          throw new Error(authErr.message || 'Gagal mengirim email reset. Silakan coba lagi nanti.');
         }
       }
       
@@ -818,6 +818,7 @@ function RegisterView({ onSuccess, onSwitch }: any) {
         await setDoc(doc(db, 'users', user.uid), {
           nip: trimmedNip,
           email: formData.email,
+          password: formData.password,
           name: formData.name,
           role: isAdmin ? 'admin' : 'user',
           village: formData.village.trim(),
@@ -825,7 +826,7 @@ function RegisterView({ onSuccess, onSwitch }: any) {
           deviceInfo: getDeviceInfo(),
           status: 'active',
           createdAt: serverTimestamp()
-        });
+        }, { merge: true });
       } catch (firestoreErr: any) {
         console.error("Firestore user creation error:", firestoreErr);
         if (firestoreErr.code === 'permission-denied') {

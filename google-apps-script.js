@@ -62,6 +62,10 @@ function doPost(e) {
       result = executeBatch(data.ops);
     } else if (action === 'upload_file') {
       result = uploadFile(data.path, data.data);
+    } else if (action === 'reset_password') {
+      result = resetPassword(data.email);
+    } else if (action === 'update_password') {
+      result = updatePassword(data.uid, data.newPassword);
     } else {
       throw new Error('Unknown action: ' + action);
     }
@@ -230,6 +234,42 @@ function registerUser(email, password) {
   const { password: _, ...safeUser } = newUser;
   safeUser.uid = safeUser.id;
   return { user: safeUser };
+}
+
+function resetPassword(email) {
+  const users = getSheetData('users');
+  const user = users.find(u => u.email === email);
+  if (!user) throw new Error('Email tidak ditemukan');
+  
+  const newPassword = Math.random().toString(36).slice(-8);
+  const success = updateRow('users', user.id, { password: newPassword }, true);
+  if (!success) throw new Error('Gagal mengupdate password di database');
+  
+  try {
+    MailApp.sendEmail({
+      to: email,
+      subject: 'Reset Password Aplikasi Absensi',
+      htmlBody: `
+        <h3>Reset Password Berhasil</h3>
+        <p>Halo ${user.name || 'Pengguna'},</p>
+        <p>Password Anda telah direset. Berikut adalah informasi login Anda yang baru:</p>
+        <p><strong>NIP:</strong> ${user.nip || '-'}</p>
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Password Baru:</strong> ${newPassword}</p>
+        <br>
+        <p>Silakan login dan segera ganti password Anda melalui menu pengaturan aplikasi.</p>
+      `
+    });
+  } catch (e) {
+    throw new Error('Password berhasil direset menjadi: ' + newPassword + ' (Gagal mengirim email, pastikan Apps Script memiliki izin MailApp)');
+  }
+  return true;
+}
+
+function updatePassword(uid, newPassword) {
+  const success = updateRow('users', uid, { password: newPassword }, true);
+  if (!success) throw new Error('User tidak ditemukan');
+  return true;
 }
 
 function getDoc(path, id) {
