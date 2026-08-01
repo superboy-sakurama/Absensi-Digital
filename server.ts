@@ -686,13 +686,17 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   app.get('/api/time', async (req, res) => {
     try {
-      // Fetch time from Google's server header
-      const response = await fetch('https://google.com', { method: 'HEAD' });
-      const dateHeader = response.headers.get('date');
-      const timestamp = dateHeader ? new Date(dateHeader).getTime() : Date.now();
-      res.json({ timestamp });
+      // Mengambil waktu dari API publik terpercaya untuk memastikan bukan waktu perangkat (lokal)
+      const response = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=Asia/Jakarta');
+      if (response.ok) {
+        const data = await response.json();
+        const timestamp = new Date(data.dateTime).getTime();
+        return res.json({ timestamp });
+      }
+      throw new Error('Failed to fetch from timeapi.io');
     } catch (error) {
-      console.error('Failed to fetch Google time:', error);
+      console.error('Failed to fetch external time, falling back to secure server time:', error);
+      // Fallback ke waktu server (Vercel/Railway), bukan waktu perangkat pengguna
       res.json({ timestamp: Date.now() });
     }
   });
@@ -1860,7 +1864,8 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     (async () => {
-      const { createServer: createViteServer } = await import('vite');
+      const viteModule = 'vite';
+      const { createServer: createViteServer } = await import(/* @vite-ignore */ viteModule);
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: 'spa',
