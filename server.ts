@@ -684,10 +684,17 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     res.json({ success: true, message: 'Pendaftaran berhasil' });
   });
 
-  app.get('/api/time', (req, res) => {
-    // Return server time for client synchronization
-    // Use Asia/Jakarta explicitly if needed, but returning timestamp is enough
-    res.json({ timestamp: Date.now() });
+  app.get('/api/time', async (req, res) => {
+    try {
+      // Fetch time from Google's server header
+      const response = await fetch('https://google.com', { method: 'HEAD' });
+      const dateHeader = response.headers.get('date');
+      const timestamp = dateHeader ? new Date(dateHeader).getTime() : Date.now();
+      res.json({ timestamp });
+    } catch (error) {
+      console.error('Failed to fetch Google time:', error);
+      res.json({ timestamp: Date.now() });
+    }
   });
 
   // Auto Check-Out Helper Function
