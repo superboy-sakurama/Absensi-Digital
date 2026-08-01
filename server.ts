@@ -71,7 +71,13 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   }
   if (process.env.SPREADSHEET_ID && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
     try {
-      const privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+      let rawKey = process.env.GOOGLE_PRIVATE_KEY || '';
+      if (rawKey.startsWith('"') && rawKey.endsWith('"')) {
+        rawKey = rawKey.substring(1, rawKey.length - 1);
+      } else if (rawKey.startsWith("'") && rawKey.endsWith("'")) {
+        rawKey = rawKey.substring(1, rawKey.length - 1);
+      }
+      const privateKey = rawKey.replace(/\\n/g, '\n');
       console.log('Attempting to connect to Google Sheets...');
       const serviceAccountAuth = new JWT({
         email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
