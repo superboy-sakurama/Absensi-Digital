@@ -1,8 +1,9 @@
 {
-  "name": "Si Abon Elite",
-  "description": "Aplikasi absensi berbasis lokasi GPS dan kamera dengan fitur rekapitulasi untuk admin.",
+  "name": "Si Abon Elite App",
+  "description": "Sistem Absensi Online Elegan Informatif Terkini",
   "requestFramePermissions": [
     "camera",
     "geolocation"
-  ]
+  ],
+  "majorCapabilities": []
 }
