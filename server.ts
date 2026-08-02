@@ -1001,14 +1001,12 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
       let serverTimeStr = timeFormatter.format(now).replace('.', ':');
       attendanceData.time = serverTimeStr;
 
-      if (attendanceData.type === 'in') {
-        const dateFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' });
-        const parts = dateFormatter.formatToParts(now);
-        const year = parts.find(p => p.type === 'year')?.value;
-        const month = parts.find(p => p.type === 'month')?.value;
-        const day = parts.find(p => p.type === 'day')?.value;
-        attendanceData.date = `${year}-${month}-${day}`;
-      }
+      const dateFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' });
+      const parts = dateFormatter.formatToParts(now);
+      const year = parts.find(p => p.type === 'year')?.value;
+      const month = parts.find(p => p.type === 'month')?.value;
+      const day = parts.find(p => p.type === 'day')?.value;
+      attendanceData.date = `${year}-${month}-${day}`;
     }
 
     if (doc) {

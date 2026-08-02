@@ -42,40 +42,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const [timeSynced, setTimeSynced] = React.useState(false);
-
   useEffect(() => {
-    let mounted = true;
-    const initialSync = async () => {
-      let success = false;
-      while (!success && mounted) {
-        success = await syncServerTime();
-        if (success) {
-          setTimeSynced(true);
-        } else {
-          // Wait 2 seconds before retrying
-          await new Promise(r => setTimeout(r, 2000));
-        }
-      }
-    };
-    initialSync();
+    // Sync time in the background, but don't block the UI
+    syncServerTime();
 
     // Re-sync every 30 minutes
     const interval = setInterval(syncServerTime, 30 * 60 * 1000);
+
     return () => {
-      mounted = false;
       clearInterval(interval);
     };
   }, []);
-
-  if (!timeSynced) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
-         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
-         <p className="text-sm text-slate-500 font-medium animate-pulse">Sinkronisasi waktu server...</p>
-      </div>
-    );
-  }
 
   return (
     <Router>
