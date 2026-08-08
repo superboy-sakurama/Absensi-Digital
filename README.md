@@ -13,3 +13,8 @@ Berikan seberaninya. Berikan setulusnya. Sisanya, biarkan kehidupan bekerja deng
 
 Cara setting aplikasi sampai Deploy 
 Chat Whatsapp ; 081332248688
+Perkenalkan diri anda 
+Nama : 
+Asal Instansi :
+Alamat Instansi :
+Keperluan/perihal : 
