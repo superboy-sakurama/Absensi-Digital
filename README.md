@@ -12,6 +12,7 @@ sering kali kembali dalam bentuk yang tidak selalu sama, tetapi bermakna bagi ke
 Berikan seberaninya. Berikan setulusnya. Sisanya, biarkan kehidupan bekerja dengan caranya sendiri. 🙏 
 https://github.com/superboy-sakurama/Absensi-Digital/commit/f08b6a0683b46527aa16f34d3a53f9fc285a806e
 
+Atau Kunjungi ke laman berikut untuk keberanian anda : 
 https://lynk.id/alielafroh
 
 Pengaturan awal , di Menu Master Data, pertama harus tambah Unit Layanan ,tambah lokasi/alamat kantor, tambah Karyawan (bisa import excel), Tambah Shift (jika ada)
