@@ -1,3 +1,4 @@
+import { getServerTime } from '@/lib/time';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
@@ -5,17 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MapPin, Camera, CheckCircle2 } from 'lucide-react';
-import { checkAndFireAlarm, initBackgroundAudio } from '@/utils/alarm';
-import { createTimerWorker } from '@/utils/timerWorker';
+import { checkAndFireAlarm } from '@/utils/alarm';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 
 import { format } from 'date-fns';
-import { getServerTime } from '@/lib/time';
-
-
-
-
 
 const resolveActiveShifts = (shifts: any[], user?: any, employees: any[] = []) => {
   const fullUser = user?.nip ? employees.find(e => e.nip === user.nip) || user : user;
@@ -37,12 +32,11 @@ export default function UserHome() {
   const [isLocating, setIsLocating] = useState(true);
   const [canRefresh, setCanRefresh] = useState(false);
   const [isAbsenting, setIsAbsenting] = useState(false);
-  const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isWithinRange, setIsWithinRange] = useState(false);
   const [address, setAddress] = useState<string>('');
 
-  const [user, setUser] = useState<{name: string, nip: string, office: string, office2?: string, unit?: string} | null>(null);
+  const [user, setUser] = useState<{name: string, nip: string, office: string, office2?: string, office3?: string, unit?: string} | null>(null);
   const [settings, setSettings] = useState<any>(null);
   const [hasCheckedIn, setHasCheckedIn] = useState(false);
   const [hasCheckedOut, setHasCheckedOut] = useState(false);
@@ -53,166 +47,26 @@ export default function UserHome() {
   const [leaveType, setLeaveType] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<string>('');
   const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [holidays, setHolidays] = useState<any[]>([]);
   const [nextShift, setNextShift] = useState<any>(null);
   const [checkInCountdown, setCheckInCountdown] = useState<string>('');
   const [canCheckIn, setCanCheckIn] = useState(true);
-  const [isHolidayOff, setIsHolidayOff] = useState(false);
   const [isTambahJaga, setIsTambahJaga] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [holidays, setHolidays] = useState<any[]>([]);
+  const [isHolidayRestricted, setIsHolidayRestricted] = useState(false);
   const [selectedFriendNip, setSelectedFriendNip] = useState<string>('');
   const [replacingFriendNip, setReplacingFriendNip] = useState<string | null>(localStorage.getItem('replacingFriendNip'));
-  const [attendanceData, setAttendanceData] = useState<any[]>([]);
-
-  useEffect(() => {
-    const alarmEnabled = localStorage.getItem('alarmEnabled') !== 'false';
-    const alarmBeforeMinutes = parseInt(localStorage.getItem('alarmBeforeMinutes') || '10', 10);
-    const alarmAfterMinutes = parseInt(localStorage.getItem('alarmAfterMinutes') || '15', 10);
-    if (!alarmEnabled || shifts.length === 0) return;
-
-    const worker = createTimerWorker();
-    worker.onmessage = () => {
-      const now = getServerTime();
-      const activeShifts = resolveActiveShifts(shifts, user, employees);
-      let targetShift = activeShifts[0] || shifts[0];
-      
-      // Determine targetShift properly if already checked in
-      if (hasCheckedIn && activeShifts.length > 1 && checkInTime) {
-        let inHour = 0;
-        let inMin = 0;
-        const timeMatch = checkInTime.match(/(\d+)[.:](\d+)/);
-        if (timeMatch) {
-          inHour = parseInt(timeMatch[1], 10);
-          inMin = parseInt(timeMatch[2], 10);
-          const lowerTime = checkInTime.toLowerCase();
-          if (lowerTime.includes('pm') && inHour < 12) inHour += 12;
-          else if (lowerTime.includes('am') && inHour === 12) inHour = 0;
-        }
-        if (!isNaN(inHour) && !isNaN(inMin)) {
-          const checkInMinutes = inHour * 60 + inMin;
-          let minDiff = Infinity;
-          activeShifts.forEach(shift => {
-            const [startHour, startMin] = shift.startTime.split(':').map(Number);
-            const startMinutes = startHour * 60 + startMin;
-            let diff = Math.abs(checkInMinutes - startMinutes);
-            if (diff > 720) diff = 1440 - diff;
-            if (diff < minDiff) {
-              minDiff = diff;
-              targetShift = shift;
-            }
-          });
-        }
-      }
-
-      if (!targetShift) return;
-
-      const [startHour, startMinute] = targetShift.startTime.split(':').map(Number);
-      let adjustedEndTime = targetShift.endTime;
-      if (now.getDay() === 5 && targetShift.fridayEndTime) {
-        adjustedEndTime = targetShift.fridayEndTime;
-      } else if (now.getDay() === 6 && targetShift.saturdayEndTime) {
-        adjustedEndTime = targetShift.saturdayEndTime;
-      }
-      const [endHour, endMinute] = adjustedEndTime.split(':').map(Number);
-
-      let shiftStart = getServerTime();
-      shiftStart.setHours(startHour, startMinute, 0, 0);
-      
-      let shiftEnd = getServerTime();
-      shiftEnd.setHours(endHour, endMinute, 0, 0);
-
-      if (startHour > endHour) {
-        if (now.getHours() >= startHour - 2) {
-          shiftEnd.setDate(shiftEnd.getDate() + 1);
-        } else {
-          shiftStart.setDate(shiftStart.getDate() - 1);
-        }
-      }
-
-      // Check before shift (masuk) & late check-in
-      if (!hasCheckedIn) {
-        const diffBefore = shiftStart.getTime() - now.getTime();
-        const todayDateStr = now.toDateString();
-        
-        // Pengingat sebelum masuk
-        if (diffBefore > 0 && diffBefore <= alarmBeforeMinutes * 60000) {
-          checkAndFireAlarm(
-            'Pengingat Absensi Masuk',
-            `Waktu absen masuk untuk shift ${targetShift.name} tinggal ${Math.ceil(diffBefore / 60000)} menit lagi.`,
-            `masuk_target_${targetShift.id || targetShift.name}_${todayDateStr}`
-          );
-        }
-        
-        // Peringatan Keterlambatan (Late 15 minutes) - if diffBefore is between -15 and -16 mins
-        if (diffBefore <= -15 * 60000 && diffBefore > -20 * 60000) {
-          const day = now.getDay();
-          if (day >= 1 && day <= 5) {
-            checkAndFireAlarm(
-              'Peringatan Keterlambatan',
-              'Anda belum absen masuk dan shift sudah berjalan 15 menit!',
-              `telat_15_${targetShift.id || targetShift.name}_${todayDateStr}`
-            );
-          }
-        }
-      }
-
-      // Check after shift (pulang)
-      if (hasCheckedIn && !hasCheckedOut) {
-        const diffAfter = now.getTime() - shiftEnd.getTime();
-        if (diffAfter > 0 && diffAfter >= alarmAfterMinutes * 60000) {
-          const todayDateStr = now.toDateString();
-          checkAndFireAlarm(
-            'Pengingat Absensi Pulang',
-            `Waktu absen pulang untuk shift ${targetShift.name} sudah lewat ${Math.floor(diffAfter / 60000)} menit. Segera lakukan absensi pulang.`,
-            `pulang_target_${targetShift.id || targetShift.name}_${todayDateStr}`
-          );
-        }
-      }
-
-    };
-
-    worker.postMessage({ command: 'start', interval: 30000 });
-
-    return () => {
-      worker.postMessage({ command: 'stop' });
-      worker.terminate();
-    };
-  }, [shifts, user, employees, hasCheckedIn, hasCheckedOut, checkInTime]);
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('user') || '{}');
     setUser(userData);
-    
-    // Add interaction listener to initialize background audio for reliable alarms
-    const handleFirstInteraction = () => {
-      initBackgroundAudio();
-      document.removeEventListener('click', handleFirstInteraction);
-      document.removeEventListener('touchstart', handleFirstInteraction);
-    };
-    
-    document.addEventListener('click', handleFirstInteraction);
-    document.addEventListener('touchstart', handleFirstInteraction);
-
-    return () => {
-      document.removeEventListener('click', handleFirstInteraction);
-      document.removeEventListener('touchstart', handleFirstInteraction);
-    };
   }, []);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Pre-flight check to fix any missing checkouts globally
-        try {
-          await fetch('/api/attendance/auto-checkout-check', { method: 'POST' });
-        } catch (e) {
-          if (e instanceof TypeError && e.message.includes('fetch')) {
-            // Ignore dev server restart networking errors
-          } else {
-            console.error('Failed auto-checkout check', e);
-          }
-        }
-
+        await fetch('/api/attendance/auto-checkout-check').catch(() => {});
+        
         const [locRes, setRes, attRes, shiftRes, annRes, empRes, holRes] = await Promise.all([
           fetch('/api/locations'),
           fetch('/api/settings'),
@@ -239,17 +93,16 @@ export default function UserHome() {
           const data = await shiftRes.json();
           setShifts(data);
         }
-        if (annRes.ok) {
-          const data = await annRes.json();
-          setAnnouncements(data.filter((a: any) => a.isActive));
-        }
         if (holRes && holRes.ok) {
           const data = await holRes.json();
           setHolidays(data);
         }
+        if (annRes.ok) {
+          const data = await annRes.json();
+          setAnnouncements(data.filter((a: any) => a.isActive));
+        }
         if (attRes.ok) {
           const data = await attRes.json();
-          setAttendanceData(data);
           const userData = JSON.parse(localStorage.getItem('user') || '{}');
           const today = format(getServerTime(), 'yyyy-MM-dd');
           
@@ -257,16 +110,11 @@ export default function UserHome() {
           const currentReplacingNip = localStorage.getItem('replacingFriendNip');
 
           if (currentReplacingNip) {
-            const friendAtt = data.filter((a: any) => a.nip === currentReplacingNip);
-            const friendIn = friendAtt.filter((a: any) => a.type === 'in');
-            const friendOut = friendAtt.filter((a: any) => a.type === 'out');
-            const latestIn = friendIn[friendIn.length - 1];
-            const hasOutForLatestIn = latestIn && friendOut.some((o: any) => o.date === latestIn.date || o.id > latestIn.id);
-
-            if (!latestIn || hasOutForLatestIn) {
+            const friendAtt = data.filter((a: any) => a.nip === currentReplacingNip && a.date === today);
+            const friendOut = friendAtt.find((a: any) => a.type === 'out');
+            if (friendOut) {
               localStorage.removeItem('replacingFriendNip');
               setReplacingFriendNip(null);
-              nipToCheck = userData.nip;
             } else {
               nipToCheck = currentReplacingNip;
             }
@@ -275,8 +123,16 @@ export default function UserHome() {
           const userAttToday = data.filter((a: any) => {
             if (a.nip !== nipToCheck) return false;
             if (a.date === today) return true;
-            if (a.location && typeof a.location === 'object' && a.location.endDate) {
-              return today >= a.date && today <= a.location.endDate;
+            if (['izin', 'sakit', 'Cuti', 'dinas_luar', 'pending'].includes(a.type) || ['izin', 'Sakit', 'Cuti', 'Dinas Luar', 'pending'].includes(a.status)) {
+              if (typeof a.location === 'object' && a.location !== null && a.location.endDate) {
+                 const recDate = new Date(a.date);
+                 const targetDate = new Date(today);
+                 const endDate = new Date(a.location.endDate);
+                 recDate.setHours(0, 0, 0, 0);
+                 targetDate.setHours(0, 0, 0, 0);
+                 endDate.setHours(0, 0, 0, 0);
+                 return targetDate >= recDate && targetDate <= endDate;
+              }
             }
             return false;
           });
@@ -320,22 +176,39 @@ export default function UserHome() {
           }
         }
       } catch (err) {
-        if (err instanceof TypeError && err.message.includes('fetch')) {
-          // Suppress expected network errors when dev server restarts
-          return;
-        }
         console.error('Failed to fetch data:', err);
-      } finally {
-        setIsInitialDataLoaded(true);
       }
     };
     fetchData();
   }, []);
 
   useEffect(() => {
+    if (shifts.length > 0) {
+      const targetUser = (isTambahJaga && selectedFriendNip) ? employees.find(e => e.nip === selectedFriendNip) : replacingFriendNip ? employees.find(e => e.nip === replacingFriendNip) : user;
+      const activeShifts = resolveActiveShifts(shifts, targetUser, employees);
+      let restricted = false;
+
+      const now = getServerTime();
+      const todayStr = format(now, 'yyyy-MM-dd');
+      const isSunday = now.getDay() === 0;
+      const isPublicHoliday = holidays.some(h => h.date === todayStr);
+
+      if (isSunday || isPublicHoliday) {
+        const canCheckInAny = activeShifts.some(s => s.allowHolidayCheckIn);
+        if (!canCheckInAny) {
+          restricted = true;
+        }
+      }
+
+      setIsHolidayRestricted(restricted);
+    }
+  }, [shifts, holidays, user, employees, isTambahJaga, selectedFriendNip, replacingFriendNip]);
+
+  useEffect(() => {
     if (hasCheckedIn && !hasCheckedOut) {
       if (shifts.length > 0) {
-        const activeShifts = resolveActiveShifts(shifts, user, employees);
+        const targetUser = replacingFriendNip ? employees.find(e => e.nip === replacingFriendNip) : user;
+        const activeShifts = resolveActiveShifts(shifts, targetUser, employees);
         let targetShift = activeShifts[0] || shifts[0];
         
         if (activeShifts.length > 1 && checkInTime) {
@@ -423,20 +296,16 @@ export default function UserHome() {
         setCanCheckOut(true);
       }
     }
-  }, [hasCheckedIn, hasCheckedOut, shifts, checkInTime, user, employees]);
+  }, [hasCheckedIn, hasCheckedOut, shifts, checkInTime, user, employees, replacingFriendNip]);
 
   useEffect(() => {
-    const intervals: NodeJS.Timeout[] = [];
+    let interval: NodeJS.Timeout;
     
-    // Timer untuk Absen Masuk (selalu berjalan agar canCheckIn uptodate untuk ganti jaga)
-    if (shifts.length > 0) {
+    // Timer untuk Absen Masuk (jika belum absen masuk)
+    if (!hasCheckedIn && shifts.length > 0) {
       const isCountdownEnabled = settings?.absensiSettings?.enableCountdown !== false;
-      
-      const applyUser = (isTambahJaga && selectedFriendNip) 
-        ? employees.find(e => e.nip === selectedFriendNip) 
-        : (replacingFriendNip ? employees.find(e => e.nip === replacingFriendNip) : user);
-      const activeShifts = resolveActiveShifts(shifts, applyUser, employees);
-      
+      const targetUser = (isTambahJaga && selectedFriendNip) ? employees.find(e => e.nip === selectedFriendNip) : user;
+      const activeShifts = resolveActiveShifts(shifts, targetUser, employees);
       const calculateCheckInCountdown = () => {
         if (!isCountdownEnabled) {
           setCanCheckIn(true);
@@ -479,48 +348,56 @@ export default function UserHome() {
         if (upcomingShift) {
           setNextShift(upcomingShift);
           
-          // Alarm logic dipindahkan ke worker timer di useEffect utama
+          // Alarm logic
+          const diffMsStart = upcomingShiftStart.getTime() - now.getTime();
+          
+          const alarmBeforeStr = localStorage.getItem('alarmBeforeMins');
+          const alarmBefore = alarmBeforeStr ? parseInt(alarmBeforeStr, 10) : 10;
+          if (alarmBefore >= 0 && diffMsStart <= alarmBefore * 60000 && diffMsStart > -3600000) {
+            checkAndFireAlarm(
+              'Pengingat Absensi Masuk', 
+              `Shift Anda akan mulai dalam ${alarmBefore} menit. Jangan lupa absen masuk!`, 
+              `masuk_${alarmBefore}`
+            );
+          }
+
+          const alarmAfterStr = localStorage.getItem('alarmAfterMins');
+          const alarmAfter = alarmAfterStr ? parseInt(alarmAfterStr, 10) : 15;
+          if (alarmAfter >= 0 && diffMsStart <= -alarmAfter * 60000 && diffMsStart > -14400000 && !hasCheckedIn) {
+            checkAndFireAlarm(
+              'Peringatan Keterlambatan', 
+              `Anda belum absen masuk dan shift sudah berjalan ${alarmAfter} menit!`, 
+              `telat_${alarmAfter}`
+            );
+          }
 
           // Izinkan absen masuk mulai X menit sebelum shift dimulai
           const beforeMinutes = parseInt(upcomingShift.checkInBeforeMinutes || '60');
           const minCheckIn = new Date(upcomingShiftStart.getTime() - beforeMinutes * 60000); 
           const diffMs = minCheckIn.getTime() - now.getTime();
 
-          const isSunday = now.getDay() === 0;
-          const todayStr = format(now, "yyyy-MM-dd");
-          const isHoliday = holidays.some((h: any) => format(new Date(h.date), "yyyy-MM-dd") === todayStr);
-
-          if ((isSunday && upcomingShift.isOffSunday) || (isHoliday && upcomingShift.isOffHoliday)) {
-            setIsHolidayOff(true);
+          if (diffMs > 0) {
             setCanCheckIn(false);
-            setCheckInCountdown('');
+            const hours = Math.floor(diffMs / (1000 * 60 * 60));
+            const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+            setCheckInCountdown(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
           } else {
-            setIsHolidayOff(false);
-            if (diffMs > 0) {
-              setCanCheckIn(false);
-              const hours = Math.floor(diffMs / (1000 * 60 * 60));
-              const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-              const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
-              setCheckInCountdown(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
-            } else {
-              setCanCheckIn(true);
-              setCheckInCountdown('');
-            }
+            setCanCheckIn(true);
+            setCheckInCountdown('');
           }
         }
       };
 
       calculateCheckInCountdown();
-      intervals.push(setInterval(calculateCheckInCountdown, 1000));
+      interval = setInterval(calculateCheckInCountdown, 1000);
     }
     
     // Timer untuk Absen Pulang (jika sudah absen masuk)
     if (hasCheckedIn && !hasCheckedOut && shiftEndTime) {
       const calculateCountdown = () => {
-        const applyUser = (isTambahJaga && selectedFriendNip) 
-          ? employees.find(e => e.nip === selectedFriendNip) 
-          : (replacingFriendNip ? employees.find(e => e.nip === replacingFriendNip) : user);
-        const activeShifts = resolveActiveShifts(shifts, applyUser, employees);
+        const targetUser = replacingFriendNip ? employees.find(e => e.nip === replacingFriendNip) : user;
+        const activeShifts = resolveActiveShifts(shifts, targetUser, employees);
         let targetShift = activeShifts[0] || shifts[0];
         
         if (activeShifts.length > 1 && checkInTime) {
@@ -582,6 +459,20 @@ export default function UserHome() {
         
         const diff = shiftEnd.getTime() - now.getTime();
         
+        // Checkout alarm logic
+        const alarmCheckoutStr = localStorage.getItem('alarmCheckoutMins');
+        const alarmCheckout = alarmCheckoutStr ? parseInt(alarmCheckoutStr, 10) : 0;
+        if (alarmCheckout >= 0 && diff <= -alarmCheckout * 60000 && diff > -43200000 && !hasCheckedOut && hasCheckedIn) {
+          const bodyTxt = alarmCheckout === 0 
+            ? `Waktu shift Anda telah selesai. Jangan lupa absen pulang!` 
+            : `Waktu pulang sudah lewat ${alarmCheckout} menit. Jangan lupa absen pulang!`;
+          checkAndFireAlarm(
+            'Pengingat Absensi Pulang',
+            bodyTxt,
+            `pulang_${alarmCheckout}`
+          );
+        }
+        
         if (diff > 0) {
           const hours = Math.floor(diff / (1000 * 60 * 60));
           const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -593,11 +484,11 @@ export default function UserHome() {
       };
       
       calculateCountdown();
-      intervals.push(setInterval(calculateCountdown, 1000));
+      interval = setInterval(calculateCountdown, 1000);
     }
     
-    return () => intervals.forEach(i => clearInterval(i));
-  }, [hasCheckedIn, hasCheckedOut, shiftEndTime, shifts, checkInTime, settings, user, employees, isTambahJaga, selectedFriendNip, replacingFriendNip, holidays]);
+    return () => clearInterval(interval);
+  }, [hasCheckedIn, hasCheckedOut, shiftEndTime, shifts, checkInTime, settings, user, employees, isTambahJaga, selectedFriendNip, replacingFriendNip]);
 
   const fetchLocation = () => {
     setIsLocating(true);
@@ -731,6 +622,7 @@ export default function UserHome() {
       
       const officeAddress = user?.office?.toLowerCase() || '';
       const officeAddress2 = user?.office2?.toLowerCase() || '';
+      const officeAddress3 = user?.office3?.toLowerCase() || '';
       const locationNameLower = detectedAddress.toLowerCase();
       
       let withinRange = false;
@@ -758,7 +650,7 @@ export default function UserHome() {
         return false;
       };
 
-      if (isNameMatch(officeAddress, locationNameLower) || isNameMatch(officeAddress2, locationNameLower)) {
+      if (isNameMatch(officeAddress, locationNameLower) || isNameMatch(officeAddress2, locationNameLower) || isNameMatch(officeAddress3, locationNameLower)) {
         withinRange = true;
       }
 
@@ -768,9 +660,9 @@ export default function UserHome() {
         withinRange = locations.some(loc => {
           if (!loc.coordinates) return false;
           
-          // Hanya cek lokasi yang namanya sesuai dengan office atau office2 user
+          // Hanya cek lokasi yang namanya sesuai dengan office atau office2 atau office3 user
           const locNameLower = (loc.desa || loc.name || '').toLowerCase();
-          const isUserLocation = isNameMatch(officeAddress, locNameLower) || isNameMatch(officeAddress2, locNameLower);
+          const isUserLocation = isNameMatch(officeAddress, locNameLower) || isNameMatch(officeAddress2, locNameLower) || isNameMatch(officeAddress3, locNameLower);
           
           if (!isUserLocation) return false;
 
@@ -949,14 +841,7 @@ export default function UserHome() {
         const todayStr = format(getServerTime(), 'yyyy-MM-dd');
         
         if (submitType === 'in') {
-          const personAtt = checkData.filter((a: any) => {
-            if (a.nip !== submitNip) return false;
-            if (a.date === todayStr) return true;
-            if (a.location && typeof a.location === 'object' && a.location.endDate) {
-              return todayStr >= a.date && todayStr <= a.location.endDate;
-            }
-            return false;
-          });
+          const personAtt = checkData.filter((a: any) => a.nip === submitNip && a.date === todayStr);
           const hasGotLeave = personAtt.find((a: any) => ['izin', 'sakit', 'Cuti', 'dinas_luar'].includes(a.type));
           const hasAlreadyIn = personAtt.find((a: any) => a.type === 'in');
           
@@ -1009,7 +894,6 @@ export default function UserHome() {
         setSelectedFriendNip('');
       } else if (replacingFriendNip && submitType === 'out') {
         localStorage.removeItem('replacingFriendNip');
-        localStorage.setItem('lastCheckInDate', format(getServerTime(), 'yyyy-MM-dd'));
         setReplacingFriendNip(null);
         nextReplacingNip = null;
       }
@@ -1018,7 +902,6 @@ export default function UserHome() {
       const attRes = await fetch('/api/attendance');
       if (attRes.ok) {
         const data = await attRes.json();
-        setAttendanceData(data);
         const userData = JSON.parse(localStorage.getItem('user') || '{}');
         const today = format(getServerTime(), 'yyyy-MM-dd');
         
@@ -1027,14 +910,7 @@ export default function UserHome() {
           nipToCheck = nextReplacingNip;
         }
         
-        const userAtt = data.filter((a: any) => {
-          if (a.nip !== nipToCheck) return false;
-          if (a.date === today) return true;
-          if (a.location && typeof a.location === 'object' && a.location.endDate) {
-            return today >= a.date && today <= a.location.endDate;
-          }
-          return false;
-        });
+        const userAtt = data.filter((a: any) => a.nip === nipToCheck && a.date === today);
         const inRecord = userAtt.find((a: any) => a.type === 'in');
         const outRecord = userAtt.find((a: any) => a.type === 'out');
         
@@ -1086,11 +962,12 @@ export default function UserHome() {
                 <p><strong>NIP:</strong> {replacingFriendNip || user.nip}</p>
                 <p><strong>Kantor 1:</strong> {user.office}</p>
                 {user.office2 && <p><strong>Kantor 2:</strong> {user.office2}</p>}
+                {user.office3 && <p><strong>Kantor 3:</strong> {user.office3}</p>}
               </div>
             )}
           </CardHeader>
           <CardContent className="space-y-6">
-            {leaveType && !isTambahJaga && !replacingFriendNip ? (
+            {leaveType ? (
               <Alert className="bg-teal-50 dark:bg-teal-950/50 border-teal-200 dark:border-teal-900 text-teal-700 dark:text-teal-400">
                 <CheckCircle2 className="w-4 h-4 text-teal-600 dark:text-teal-500" />
                 <AlertDescription className="text-lg font-medium text-center py-4">
@@ -1100,7 +977,20 @@ export default function UserHome() {
                   {leaveType === 'dinas_luar' && "Selamat menjalankan dinas luar, tetap semangat dan jaga kesehatan!"}
                 </AlertDescription>
               </Alert>
-            ) : hasCheckedOut && !isTambahJaga && !replacingFriendNip ? (
+            ) : isHolidayRestricted && !hasCheckedIn && !isTambahJaga ? (
+              <>
+                <Alert className="bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-400">
+                  <AlertDescription className="text-md font-medium text-center py-4">
+                    Hari ini hari libur. Silahkan manfaatkan hari libur anda dengan istirahat atau berlibur.
+                  </AlertDescription>
+                </Alert>
+                {!replacingFriendNip && (
+                  <Button onClick={() => setIsTambahJaga(true)} className="w-full mt-4 border-teal-500 text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30" variant="outline">
+                    Tambah Jaga (Gantikan Teman)
+                  </Button>
+                )}
+              </>
+            ) : hasCheckedOut && !isTambahJaga ? (
               <>
                 <Alert className="bg-teal-50 dark:bg-teal-950/50 border-teal-200 dark:border-teal-900 text-teal-700 dark:text-teal-400">
                   <CheckCircle2 className="w-4 h-4 text-teal-600 dark:text-teal-500" />
@@ -1138,12 +1028,7 @@ export default function UserHome() {
                          <SelectValue placeholder="Pilih teman yang akan dijagakan" />
                       </SelectTrigger>
                       <SelectContent>
-                        {employees.filter(e => {
-                          if (e.nip === user?.nip) return false;
-                          const today = format(getServerTime(), 'yyyy-MM-dd');
-                          const hasAttendedToday = attendanceData.some((a: any) => a.nip === e.nip && a.date === today && a.type === 'in');
-                          return !hasAttendedToday;
-                        }).map(emp => (
+                        {employees.filter(e => e.nip !== user?.nip).map(emp => (
                           <SelectItem key={emp.nip} value={emp.nip}>{emp.name}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1174,15 +1059,7 @@ export default function UserHome() {
                   </Alert>
                 )}
 
-                {isHolidayOff && (!hasCheckedIn || isTambahJaga) && (
-                  <Alert className="bg-green-50 dark:bg-green-950/50 border-green-200 dark:border-green-900 text-green-800 dark:text-green-400">
-                    <AlertDescription className="text-center font-medium">
-                      Hari ini hari libur. Silahkan manfaatkan hari libur anda dengan istirahat atau berlibur.
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {(!hasCheckedIn || isTambahJaga) && checkInCountdown && !canCheckIn && !isHolidayOff && (
+                {!hasCheckedIn && checkInCountdown && !canCheckIn && (
                   <Alert className="bg-teal-50 dark:bg-teal-950/50 border-teal-200 dark:border-teal-900 text-teal-700 dark:text-teal-400">
                     <AlertDescription className="text-center">
                       <p className="mb-2">Shift berikutnya: <strong>{nextShift?.name} ({nextShift?.startTime})</strong></p>
@@ -1214,11 +1091,11 @@ export default function UserHome() {
                 </div>
 
                 <Button
-                  onClick={() => (!isWithinRange && !hasCheckedIn && !isTambahJaga && !replacingFriendNip) ? navigate('/user/leave') : handleAbsen(false)}
-                  disabled={!isInitialDataLoaded || !location || isAbsenting || (isTambahJaga ? (!selectedFriendNip || !isWithinRange || !canCheckIn) : replacingFriendNip ? (!isWithinRange || (hasCheckedIn && !canCheckOut)) : (!hasCheckedIn ? (isWithinRange && !canCheckIn) : (!isWithinRange || !canCheckOut)))}
+                  onClick={() => (!isWithinRange && !hasCheckedIn) ? navigate('/user/leave') : handleAbsen(false)}
+                  disabled={!location || isAbsenting || (!canCheckIn && !hasCheckedIn && isWithinRange) || (isTambahJaga && !selectedFriendNip) || (hasCheckedIn && !canCheckOut) || (hasCheckedIn && !isWithinRange)}
                   className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 rounded-lg shadow-[0_0_10px_rgba(20,184,166,0.5)] transition-all disabled:opacity-50"
                 >
-                  {(!isInitialDataLoaded || isAbsenting) ? 'Memproses...' : (!isWithinRange && !hasCheckedIn && !isTambahJaga && !replacingFriendNip) ? 'Ajukan Izin' : (!isWithinRange) ? 'Di Luar Jangkauan Radius' : (isTambahJaga ? (isHolidayOff ? 'Hari Libur' : canCheckIn ? 'Absen Masuk (Ganti Teman)' : 'Belum Waktunya') : replacingFriendNip ? 'Absen Pulang (Ganti Jaga)' : hasCheckedIn ? 'Absen Pulang' : (isHolidayOff ? 'Hari Libur' : canCheckIn ? 'Absen Masuk' : 'Belum Waktunya'))}
+                  {isAbsenting ? 'Memproses...' : (!isWithinRange && !hasCheckedIn) ? 'Ajukan Izin' : (!isWithinRange && hasCheckedIn) ? 'Di Luar Jangkauan Radius' : (isTambahJaga ? 'Absen Masuk (Ganti Teman)' : replacingFriendNip ? 'Absen Pulang (Ganti Jaga)' : hasCheckedIn ? 'Absen Pulang' : (canCheckIn ? 'Absen Masuk' : 'Belum Waktunya'))}
                 </Button>
 
                 {hasCheckedIn && !canCheckOut && !hasCheckedOut && !isTambahJaga && !replacingFriendNip && settings?.absensiSettings?.enableEarlyCheckout !== false && (

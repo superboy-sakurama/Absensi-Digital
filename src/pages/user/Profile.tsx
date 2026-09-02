@@ -6,8 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { Camera, Volume2 } from 'lucide-react';
-import { playAlarmSound } from '@/utils/alarm';
+import { Camera } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -20,8 +19,9 @@ export default function UserProfile() {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const [employeeData, setEmployeeData] = useState<any>(null);
   const [alarmEnabled, setAlarmEnabled] = useState(localStorage.getItem('alarmEnabled') !== 'false');
-  const [alarmBeforeMinutes, setAlarmBeforeMinutes] = useState(parseInt(localStorage.getItem('alarmBeforeMinutes') || '10'));
-  const [alarmAfterMinutes, setAlarmAfterMinutes] = useState(parseInt(localStorage.getItem('alarmAfterMinutes') || '15'));
+  const [alarmBeforeMins, setAlarmBeforeMins] = useState(localStorage.getItem('alarmBeforeMins') || '10');
+  const [alarmAfterMins, setAlarmAfterMins] = useState(localStorage.getItem('alarmAfterMins') || '15');
+  const [alarmCheckoutMins, setAlarmCheckoutMins] = useState(localStorage.getItem('alarmCheckoutMins') || '0');
 
   // Password change state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -51,39 +51,11 @@ export default function UserProfile() {
     }
   }, [user.nip]);
 
-  const requestNotificationPermission = () => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  };
-
   const handleToggleAlarm = (checked: boolean) => {
     setAlarmEnabled(checked);
     localStorage.setItem('alarmEnabled', String(checked));
-    if (checked) requestNotificationPermission();
-  };
-
-  const handleBeforeMinutesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    requestNotificationPermission();
-    const val = parseInt(e.target.value);
-    if (!isNaN(val) && val >= 0) {
-      setAlarmBeforeMinutes(val);
-      localStorage.setItem('alarmBeforeMinutes', String(val));
-    } else if (e.target.value === '') {
-      setAlarmBeforeMinutes(0);
-      localStorage.setItem('alarmBeforeMinutes', '0');
-    }
-  };
-
-  const handleAfterMinutesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    requestNotificationPermission();
-    const val = parseInt(e.target.value);
-    if (!isNaN(val) && val >= 0) {
-      setAlarmAfterMinutes(val);
-      localStorage.setItem('alarmAfterMinutes', String(val));
-    } else if (e.target.value === '') {
-      setAlarmAfterMinutes(0);
-      localStorage.setItem('alarmAfterMinutes', '0');
+    if (checked && 'Notification' in window) {
+      Notification.requestPermission();
     }
   };
 
@@ -271,53 +243,58 @@ export default function UserProfile() {
         <CardHeader>
           <CardTitle className="text-lg">Pengaturan Aplikasi</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label className="text-slate-900 dark:text-slate-50">Alarm Pengingat Absensi</Label>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Aktifkan notifikasi untuk pengingat absensi masuk dan pulang shift</p>
+              <Label className="text-slate-900 dark:text-slate-50 text-base">Aktifkan Alarm Absensi</Label>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Terima notifikasi untuk absen masuk dan pulang</p>
             </div>
             <Switch checked={alarmEnabled} onCheckedChange={handleToggleAlarm} />
           </div>
-          
+
           {alarmEnabled && (
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-4">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-slate-700 dark:text-slate-300">Pengingat Masuk (Menit Sebelum Shift)</Label>
-                <div className="w-24">
-                  <Input 
-                    type="number" 
-                    min="0"
-                    value={alarmBeforeMinutes} 
-                    onChange={handleBeforeMinutesChange}
-                    className="text-center"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-slate-700 dark:text-slate-300">Pengingat Pulang (Menit Sesudah Shift)</Label>
-                <div className="w-24">
-                  <Input 
-                    type="number" 
-                    min="0"
-                    value={alarmAfterMinutes} 
-                    onChange={handleAfterMinutesChange}
-                    className="text-center"
-                  />
-                </div>
-              </div>
-              <div className="pt-2">
-                <Button 
-                  onClick={() => {
-                    playAlarmSound();
-                    toast.success("Suara alarm diuji! Pastikan volume perangkat Anda aktif.");
+            <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+              <div className="grid grid-cols-2 gap-4 items-center">
+                <Label htmlFor="alarmBefore" className="text-sm">Menit sebelum absen masuk</Label>
+                <Input 
+                  id="alarmBefore" 
+                  type="number" 
+                  min="0"
+                  value={alarmBeforeMins} 
+                  onChange={(e) => {
+                    setAlarmBeforeMins(e.target.value);
+                    localStorage.setItem('alarmBeforeMins', e.target.value);
                   }}
-                  variant="outline"
-                  className="w-full flex items-center justify-center gap-2 border-dashed border-teal-500/50 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/20"
-                >
-                  <Volume2 className="h-4 w-4" />
-                  Uji Suara Alarm (Chime)
-                </Button>
+                  className="h-9"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4 items-center">
+                <Label htmlFor="alarmAfter" className="text-sm">Menit peringatan terlambat</Label>
+                <Input 
+                  id="alarmAfter" 
+                  type="number" 
+                  min="0"
+                  value={alarmAfterMins} 
+                  onChange={(e) => {
+                    setAlarmAfterMins(e.target.value);
+                    localStorage.setItem('alarmAfterMins', e.target.value);
+                  }}
+                  className="h-9"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4 items-center">
+                <Label htmlFor="alarmCheckout" className="text-sm">Menit sesudah waktu pulang (Pengingat Pulang)</Label>
+                <Input 
+                  id="alarmCheckout" 
+                  type="number" 
+                  min="0"
+                  value={alarmCheckoutMins} 
+                  onChange={(e) => {
+                    setAlarmCheckoutMins(e.target.value);
+                    localStorage.setItem('alarmCheckoutMins', e.target.value);
+                  }}
+                  className="h-9"
+                />
               </div>
             </div>
           )}
@@ -330,9 +307,21 @@ export default function UserProfile() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Kantor / Penempatan</p>
-            <p className="font-medium">{employeeData?.office || 'Puskesmas Induk'}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Kantor / Penempatan 1</p>
+            <p className="font-medium">{employeeData?.office || user.office || 'Puskesmas Induk'}</p>
           </div>
+          {(employeeData?.office2 || user.office2) && (
+            <div>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Kantor / Penempatan 2</p>
+              <p className="font-medium">{employeeData?.office2 || user.office2}</p>
+            </div>
+          )}
+          {(employeeData?.office3 || user.office3) && (
+            <div>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Kantor / Penempatan 3</p>
+              <p className="font-medium">{employeeData?.office3 || user.office3}</p>
+            </div>
+          )}
           <div>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Unit</p>
             <p className="font-medium">{employeeData?.unit || '-'}</p>

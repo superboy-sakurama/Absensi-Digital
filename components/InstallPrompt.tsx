@@ -35,16 +35,31 @@ export default function InstallPrompt() {
       }
     }
 
+    const checkPrompt = () => {
+      // @ts-ignore
+      if (window.deferredPWAInstallPrompt) {
+        // @ts-ignore
+        setDeferredPrompt(window.deferredPWAInstallPrompt);
+        setIsVisible(true);
+      }
+    };
+
+    checkPrompt();
+
     const handler = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
       setIsVisible(true);
     };
 
+    const readyHandler = () => checkPrompt();
+
     window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('pwa-install-ready', readyHandler);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('pwa-install-ready', readyHandler);
     };
   }, []);
 

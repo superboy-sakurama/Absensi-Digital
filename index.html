@@ -6,13 +6,22 @@
     <meta name="theme-color" content="#14b8a6" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Si Abon Elite" />
+    <meta name="apple-mobile-web-app-title" content="e-Pusla" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <link rel="apple-touch-icon" href="/logo.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <title>Absensi Digital crafted with ❤️ by Go'Tri</title>
+    <title>e-Pusla App crafted with ❤️ by Go'Tri</title>
   </head>
   <body>
+    <script>
+      window.deferredPWAInstallPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        window.deferredPWAInstallPrompt = e;
+        // Dispatch a custom event so React components can catch it even if they mounted late
+        window.dispatchEvent(new Event('pwa-install-ready'));
+      });
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

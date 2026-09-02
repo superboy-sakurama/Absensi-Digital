@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { format } from 'date-fns';
 
 export default function AdminDashboard() {
-  const [appName, setAppName] = useState("Si Abon Megilan");
+  const [appName, setAppName] = useState("Absensi Digital");
   const [companyName, setCompanyName] = useState("Puskesmas Sehat");
 
   useEffect(() => {
@@ -41,8 +41,7 @@ export default function AdminDashboard() {
     if (action === 'reject') {
       finalStatus = 'Ditolak';
     } else {
-      if (type === 'izin') finalStatus = 'izin';
-      else if (type === 'sakit') finalStatus = 'Sakit';
+      if (type === 'izin' || type === 'sakit') finalStatus = 'izin';
       else if (type === 'Cuti' || type === 'cuti') finalStatus = 'Cuti';
       else if (type === 'dinas_luar') finalStatus = 'Dinas Luar';
     }
@@ -64,16 +63,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        try {
-          await fetch('/api/attendance/auto-checkout-check', { method: 'POST' });
-        } catch (e) {
-          if (e instanceof TypeError && e.message.includes('fetch')) {
-            // Ignore
-          } else {
-            console.error('Failed auto-checkout check', e);
-          }
-        }
-        
+        await fetch('/api/attendance/auto-checkout-check').catch(() => {});
         const [empRes, attRes, setRes, shiftRes] = await Promise.all([
           fetch('/api/employees'),
           fetch('/api/attendance'),
@@ -155,13 +145,7 @@ export default function AdminDashboard() {
         };
 
         const today = format(getServerTime(), 'yyyy-MM-dd');
-        const todayAttendance = attendance.filter((a: any) => {
-          if (a.date === today) return true;
-          if (a.location && typeof a.location === 'object' && a.location.endDate) {
-            return today >= a.date && today <= a.location.endDate;
-          }
-          return false;
-        });
+        const todayAttendance = attendance.filter((a: any) => a.date === today);
         const presentToday = todayAttendance.filter((a: any) => a.type === 'in');
         
         const lateToday = presentToday.filter((a: any) => {
@@ -186,7 +170,6 @@ export default function AdminDashboard() {
         const checkedOutNips = todayAttendance.filter((a: any) => a.type === 'out').map((a: any) => a.nip);
         setNotCheckedOut(employees.filter((e: any) => checkedInNips.includes(e.nip) && !checkedOutNips.includes(e.nip)));
       } catch (error) {
-        if (error instanceof TypeError && error.message.includes('fetch')) return;
         console.error('Failed to fetch data:', error);
       }
     };

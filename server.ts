@@ -9,14 +9,13 @@ import { Resend } from 'resend';
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
-const app = express();
-export default app;
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
 
-const PORT = 3000;
-
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  app.use(cors());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // Mock Database (In-Memory for Prototype)
   const db = {
@@ -32,8 +31,12 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     locations: [
       { id: 1, name: 'Kantor Induk', lat: -7.250445, lng: 112.768845, radius: 300 },
     ],
+    units: [
+      { id: '1', name: 'Manajemen' },
+      { id: '2', name: 'Pustu' }
+    ],
     settings: {
-      appName: 'Absensi DIgital App',
+      appName: 'Absensi Digital',
       companyName: 'Puskesmas Sehat',
       headName: 'Dr. Budi Santoso',
       address: 'Jl. Kesehatan No. 1, Kota Sehat',
@@ -45,39 +48,19 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   // Google Spreadsheet Setup
   let doc: GoogleSpreadsheet | null = null;
   let isDocLoaded = false;
-  let docLoadPromise: Promise<void> | null = null;
   
   // Cache for spreadsheet data
   const cache: { [key: string]: { data: any; timestamp: number } } = {};
-  const inFlightRequests: { [key: string]: Promise<any> } = {};
-  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
-  const syncedSheets = new Set<string>();
-  
-  async function getCachedData(key: string, fetchFn: () => Promise<any>) {
-    if (cache[key] && Date.now() - cache[key].timestamp < CACHE_DURATION) {
-      return cache[key].data;
-    }
-    if (inFlightRequests[key]) {
-      return inFlightRequests[key];
-    }
-    const promise = fetchFn().then(data => {
-      cache[key] = { data, timestamp: Date.now() };
-      return data;
-    }).finally(() => {
-      delete inFlightRequests[key];
-    });
-    inFlightRequests[key] = promise;
-    return promise;
-  }
+  const CACHE_DURATION = 60 * 1000; // 1 minute cache
+  async function initSpreadsheet() {
   if (process.env.SPREADSHEET_ID && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
     try {
-      let rawKey = process.env.GOOGLE_PRIVATE_KEY || '';
-      if (rawKey.startsWith('"') && rawKey.endsWith('"')) {
-        rawKey = rawKey.substring(1, rawKey.length - 1);
-      } else if (rawKey.startsWith("'") && rawKey.endsWith("'")) {
-        rawKey = rawKey.substring(1, rawKey.length - 1);
+      let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+      if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+        privateKey = privateKey.substring(1, privateKey.length - 1);
       }
-      const privateKey = rawKey.replace(/\\n/g, '\n');
+      privateKey = privateKey.replace(/\\n/g, '\n');
+      
       console.log('Attempting to connect to Google Sheets...');
       const serviceAccountAuth = new JWT({
         email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -85,13 +68,18 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
         scopes: ['https://www.googleapis.com/auth/spreadsheets'],
       });
       doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
+      await doc.loadInfo();
+      isDocLoaded = true;
+      console.log('Google Spreadsheet connected successfully:', doc.title);
     } catch (error) {
-      console.error('Failed to configure Google Spreadsheet:', error);
+      console.error('Failed to connect to Google Spreadsheet:', error);
       doc = null;
     }
   } else {
     console.warn('Google Sheets environment variables are missing.');
   }
+}
+initSpreadsheet();
 
   // Helper to get or create sheet
   async function getSheet(title: string) {
@@ -102,17 +90,8 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     try {
       // Ensure doc is loaded
       if (!isDocLoaded) {
-        if (!docLoadPromise) {
-          docLoadPromise = (async () => {
-            try {
-              if (doc) await doc.loadInfo();
-              isDocLoaded = true;
-            } finally {
-              docLoadPromise = null;
-            }
-          })();
-        }
-        await docLoadPromise;
+        await doc.loadInfo();
+        isDocLoaded = true;
       }
       const sheet = doc.sheetsByTitle[title];
       if (!sheet) {
@@ -131,8 +110,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     let sheet = await getSheet(title);
     if (!sheet && doc) {
       sheet = await doc.addSheet({ title, headerValues });
-      syncedSheets.add(title);
-    } else if (sheet && !syncedSheets.has(title)) {
+    } else if (sheet) {
       try {
         await sheet.loadHeaderRow();
         const currentHeaders = sheet.headerValues;
@@ -147,11 +125,9 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
         if (headersChanged) {
           await sheet.setHeaderRow(newHeaders);
         }
-        syncedSheets.add(title);
       } catch (e) {
         // If sheet is empty, loadHeaderRow might throw. Set headers directly.
         await sheet.setHeaderRow(headerValues);
-        syncedSheets.add(title);
       }
     }
     return sheet;
@@ -159,32 +135,39 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // API Routes
 
+  // --- Time API (Server Time) ---
+  app.get('/api/time', (req, res) => {
+    res.json({ time: Date.now() });
+  });
+
   // --- Employees API ---
   app.get('/api/employees', async (req, res) => {
     if (doc) {
       try {
-        const employees = await getCachedData('employees', async () => {
-          const sheet = await getOrCreateSheet('Employees', ['id', 'name', 'nip', 'office', 'office2', 'email', 'gender', 'cluster', 'unit', 'password', 'photoUrl', 'photoUploadCount']);
-          if (sheet) {
-            const rows = await sheet.getRows();
-            return rows.map(row => ({
-              id: row.get('id'),
-              name: row.get('name'),
-              nip: row.get('nip'),
-              office: row.get('office'),
-              office2: row.get('office2'),
-              email: row.get('email'),
-              gender: row.get('gender'),
-              cluster: row.get('cluster'),
-              unit: row.get('unit'),
-              password: row.get('password'),
-              photoUrl: row.get('photoUrl'),
-              photoUploadCount: row.get('photoUploadCount') ? parseInt(row.get('photoUploadCount'), 10) : 0
-            }));
-          }
-          return [];
-        });
-        return res.json(employees);
+        if (cache['employees'] && Date.now() - cache['employees'].timestamp < CACHE_DURATION) {
+          return res.json(cache['employees'].data);
+        }
+        const sheet = await getOrCreateSheet('Employees', ['id', 'name', 'nip', 'office', 'office2', 'office3', 'email', 'gender', 'cluster', 'unit', 'password', 'photoUrl', 'photoUploadCount']);
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const employees = rows.map(row => ({
+            id: row.get('id'),
+            name: row.get('name'),
+            nip: row.get('nip'),
+            office: row.get('office'),
+            office2: row.get('office2'),
+            office3: row.get('office3'),
+            email: row.get('email'),
+            gender: row.get('gender'),
+            cluster: row.get('cluster'),
+            unit: row.get('unit'),
+            password: row.get('password'),
+            photoUrl: row.get('photoUrl'),
+            photoUploadCount: row.get('photoUploadCount') ? parseInt(row.get('photoUploadCount'), 10) : 0
+          }));
+          cache['employees'] = { data: employees, timestamp: Date.now() };
+          return res.json(employees);
+        }
       } catch (error) {
         console.error('Error fetching employees from spreadsheet:', error);
       }
@@ -197,11 +180,12 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     
     if (doc) {
       try {
-        const sheet = await getOrCreateSheet('Employees', ['id', 'name', 'nip', 'office', 'office2', 'email', 'gender', 'cluster', 'unit', 'password', 'photoUrl', 'photoUploadCount']);
+        const sheet = await getOrCreateSheet('Employees', ['id', 'name', 'nip', 'office', 'office2', 'office3', 'email', 'gender', 'cluster', 'unit', 'password', 'photoUrl', 'photoUploadCount']);
         if (sheet) {
           await sheet.addRow({
             ...employee,
-            office2: employee.office2 || ''
+            office2: employee.office2 || '',
+            office3: employee.office3 || ''
           });
           delete cache['employees'];
         }
@@ -223,12 +207,13 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
     if (doc) {
       try {
-        const sheet = await getOrCreateSheet('Employees', ['id', 'name', 'nip', 'office', 'office2', 'email', 'gender', 'cluster', 'unit', 'password', 'photoUrl', 'photoUploadCount']);
+        const sheet = await getOrCreateSheet('Employees', ['id', 'name', 'nip', 'office', 'office2', 'office3', 'email', 'gender', 'cluster', 'unit', 'password', 'photoUrl', 'photoUploadCount']);
         if (sheet) {
           // Flatten data and add rows
           const rows = employeesData.map(emp => ({
             ...emp,
-            office2: emp.office2 || ''
+            office2: emp.office2 || '',
+            office3: emp.office3 || ''
           }));
           await sheet.addRows(rows);
           delete cache['employees'];
@@ -330,25 +315,26 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.get('/api/admins', async (req, res) => {
     if (doc) {
       try {
-        const admins = await getCachedData('admins', async () => {
-          const sheet = await getOrCreateSheet('Admins', ['id', 'name', 'nip', 'email', 'phone', 'group', 'isActive', 'access', 'password']);
-          if (sheet) {
-            const rows = await sheet.getRows();
-            return rows.map(row => ({
-              id: row.get('id'),
-              name: row.get('name'),
-              nip: row.get('nip'),
-              email: row.get('email'),
-              phone: row.get('phone'),
-              group: row.get('group'),
-              isActive: String(row.get('isActive')).toLowerCase() === 'true',
-              access: row.get('access') ? JSON.parse(row.get('access')) : [],
-              password: row.get('password')
-            }));
-          }
-          return [];
-        });
-        return res.json(admins);
+        if (cache['admins'] && Date.now() - cache['admins'].timestamp < CACHE_DURATION) {
+          return res.json(cache['admins'].data);
+        }
+        const sheet = await getOrCreateSheet('Admins', ['id', 'name', 'nip', 'email', 'phone', 'group', 'isActive', 'access', 'password']);
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const admins = rows.map(row => ({
+            id: row.get('id'),
+            name: row.get('name'),
+            nip: row.get('nip'),
+            email: row.get('email'),
+            phone: row.get('phone'),
+            group: row.get('group'),
+            isActive: String(row.get('isActive')).toLowerCase() === 'true',
+            access: row.get('access') ? JSON.parse(row.get('access')) : [],
+            password: row.get('password')
+          }));
+          cache['admins'] = { data: admins, timestamp: Date.now() };
+          return res.json(admins);
+        }
       } catch (error) {
         console.error('Error fetching admins from spreadsheet:', error);
       }
@@ -465,7 +451,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
             const rows = await userSheet.getRows();
             const row = rows.find(r => String(r.get('nip') || '').trim() === nip && String(r.get('password') || '').trim() === password);
             if (row) {
-              user = { id: row.get('id'), nip: String(row.get('nip') || '').trim(), name: row.get('name'), role: row.get('role'), office: row.get('office'), office2: row.get('office2'), unit: row.get('unit') || '' };
+              user = { id: row.get('id'), nip: String(row.get('nip') || '').trim(), name: row.get('name'), role: row.get('role'), office: row.get('office'), office2: row.get('office2'), office3: row.get('office3'), unit: row.get('unit') || '' };
               console.log('User found:', user.name);
             }
           }
@@ -491,11 +477,11 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
             if (deviceSheet) {
               const rows = await deviceSheet.getRows();
               const existingDeviceRow = rows.find(r => r.get('deviceId') === deviceId);
-              if (existingDeviceRow && existingDeviceRow.get('nip') !== nip) {
+              if (existingDeviceRow && String(existingDeviceRow.get('nip')) !== String(nip)) {
                 return res.status(403).json({ success: false, message: 'Perangkat ini sudah digunakan oleh akun lain. Silahkan hubungi Admin untuk mereset perangkat jika fitur ini bermasalah.' });
               }
 
-              const existingNipRow = rows.find(r => r.get('nip') === nip);
+              const existingNipRow = rows.find(r => String(r.get('nip')) === String(nip));
               if (existingNipRow && existingNipRow.get('deviceId') !== deviceId) {
                 return res.status(403).json({ success: false, message: 'Akun Anda terdaftar di perangkat lain. Untuk pengguna iOS/iPhone yang baru menginstall ke Layar Utama, layar utama dianggap sebagai perangkat baru. Silahkan minta Admin untuk mereset perangkat Anda di menu Karyawan.' });
               }
@@ -527,7 +513,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
       try {
         const sheetName = role === 'admin' ? 'Admins' : 'Users';
         const sheet = await getSheet(sheetName);
-        let userNip = null;
         if (sheet) {
           const rows = await sheet.getRows();
           const userRow = rows.find(r => r.get('id') === id && String(r.get('password')) === String(oldPassword));
@@ -536,20 +521,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
             userRow.set('password', newPassword);
             await userRow.save();
             passwordUpdated = true;
-            userNip = userRow.get('nip'); // Capture NIP to sync with Employees
-            
-            // Sync with employees sheet
-            if (role !== 'admin' && userNip) {
-              const empSheet = await getSheet('Employees');
-              if (empSheet) {
-                const empRows = await empSheet.getRows();
-                const empRow = empRows.find(r => r.get('nip') === userNip);
-                if (empRow) {
-                  empRow.set('password', newPassword);
-                  await empRow.save();
-                }
-              }
-            }
           } else {
             return res.status(400).json({ success: false, message: 'Password lama salah' });
           }
@@ -566,13 +537,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
         if (user.password === oldPassword) {
           user.password = newPassword;
           passwordUpdated = true;
-          // Sync with local employees db as well if mock
-          if (role !== 'admin' && user.nip) {
-            const emp = db.employees.find(e => e.nip === user.nip);
-            if (emp) {
-              (emp as any).password = newPassword;
-            }
-          }
         } else {
           return res.status(400).json({ success: false, message: 'Password lama salah' });
         }
@@ -587,29 +551,36 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   // --- API to Reset Device Binding ---
   app.delete('/api/device-bindings/:nip', async (req, res) => {
     const { nip } = req.params;
+    console.log(`[DELETE /api/device-bindings/${nip}] Requested`);
     if (doc) {
       try {
         const deviceSheet = await getSheet('DeviceBindings');
         if (deviceSheet) {
           const rows = await deviceSheet.getRows();
-          const existingNipRow = rows.find(r => r.get('nip') === nip);
+          const existingNipRow = rows.find(r => String(r.get('nip')) === String(nip));
           if (existingNipRow) {
             await existingNipRow.delete();
+            console.log(`[DELETE /api/device-bindings/${nip}] Success`);
             return res.json({ success: true, message: 'Binding perangkat berhasil dihapus.' });
           } else {
-            return res.status(404).json({ success: false, message: 'Binding perangkat tidak ditemukan.' });
+            console.log(`[DELETE /api/device-bindings/${nip}] Not found in rows, assuming already clean`);
+            return res.json({ success: true, message: 'Binding perangkat sudah kosong/tidak ada binding.' });
           }
+        } else {
+          console.log(`[DELETE /api/device-bindings/${nip}] DeviceBindings sheet not found`);
+          return res.json({ success: true, message: 'Binding perangkat sudah kosong/tidak ada binding.' });
         }
       } catch (error) {
         console.error('Error resetting device binding:', error);
         return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
       }
     }
+    console.log(`[DELETE /api/device-bindings/${nip}] Doc not loaded`);
     return res.status(500).json({ success: false, message: 'Spreadsheet tidak terkonfigurasi.' });
   });
 
   app.post('/api/register', async (req, res) => {
-    const { nip, name, email, password, gender, cluster, unit, desa, office2 } = req.body;
+    const { nip, name, email, password, gender, cluster, unit, desa, office2, office3 } = req.body;
     
     // 1. Validate NIP against Employees data
     let isValidEmployee = false;
@@ -637,7 +608,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     let userExists = false;
     if (doc) {
       try {
-        const userSheet = await getOrCreateSheet('Users', ['id', 'nip', 'name', 'email', 'role', 'password', 'gender', 'cluster', 'unit', 'office', 'office2']);
+        const userSheet = await getOrCreateSheet('Users', ['id', 'nip', 'name', 'email', 'role', 'password', 'gender', 'cluster', 'unit', 'office', 'office2', 'office3']);
         if (userSheet) {
           const rows = await userSheet.getRows();
           userExists = rows.some(r => String(r.get('nip')) === String(nip));
@@ -664,13 +635,14 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
       cluster,
       unit,
       office: desa,
-      office2: office2 || ''
+      office2: office2 || '',
+      office3: office3 || ''
     };
 
     // Save to Google Spreadsheet if configured
     if (doc) {
       try {
-        const sheet = await getOrCreateSheet('Users', ['id', 'nip', 'name', 'email', 'role', 'password', 'gender', 'cluster', 'unit', 'office', 'office2']);
+        const sheet = await getOrCreateSheet('Users', ['id', 'nip', 'name', 'email', 'role', 'password', 'gender', 'cluster', 'unit', 'office', 'office2', 'office3']);
         if (sheet) {
           await sheet.addRow(newUser);
         }
@@ -684,308 +656,194 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     res.json({ success: true, message: 'Pendaftaran berhasil' });
   });
 
-  app.get('/api/time', async (req, res) => {
-    try {
-      // Mengambil waktu dari API publik terpercaya untuk memastikan bukan waktu perangkat (lokal)
-      const response = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=Asia/Jakarta');
-      if (response.ok) {
-        const data = await response.json();
-        const timestamp = new Date(data.dateTime).getTime();
-        return res.json({ timestamp });
-      }
-      throw new Error('Failed to fetch from timeapi.io');
-    } catch (error) {
-      console.error('Failed to fetch external time, falling back to secure server time:', error);
-      // Fallback ke waktu server (Vercel/Railway), bukan waktu perangkat pengguna
-      res.json({ timestamp: Date.now() });
-    }
-  });
-
-  // Auto Check-Out Helper Function
-  async function runAutoCheckout() {
-    let fixedCount = 0;
-    try {
-      let attendanceList: any[] = [];
-      let employeeList: any[] = [];
-      let shiftList: any[] = [];
-      let attSheet: any = null;
-
-      if (doc) {
-        attSheet = await getOrCreateSheet('Attendance', ['id', 'nip', 'name', 'date', 'time', 'type', 'location', 'status', 'photoUrl', 'shift']);
-        const empSheet = await getOrCreateSheet('Employees', ['id', 'name', 'nip', 'office', 'office2', 'email', 'gender', 'cluster', 'unit', 'password', 'photoUrl', 'photoUploadCount']);
-        const shiftSheet = await getOrCreateSheet('Shifts', ['id', 'name', 'startTime', 'endTime', 'fridayEndTime', 'saturdayEndTime', 'checkInBeforeMinutes', 'checkInAfterMinutes', 'checkOutBeforeMinutes', 'checkOutAfterMinutes', 'crossesMidnight', 'isActive', 'unit', 'isOffSunday', 'isOffHoliday']);
-
-        if (attSheet && empSheet && shiftSheet) {
-          const [attRows, empRows, shiftRows] = await Promise.all([
-            attSheet.getRows(),
-            empSheet.getRows(),
-            shiftSheet.getRows()
-          ]);
-
-          attendanceList = attRows.map(r => ({
-            nip: r.get('nip'),
-            name: r.get('name'),
-            date: r.get('date'),
-            time: r.get('time'),
-            type: r.get('type'),
-            location: r.get('location'),
-            status: r.get('status'),
-            shift: r.get('shift') || ''
-          }));
-
-          employeeList = empRows.map(r => ({ nip: r.get('nip'), unit: r.get('unit') }));
-          shiftList = shiftRows.map(r => ({
-            name: r.get('name'),
-            startTime: r.get('startTime'),
-            endTime: r.get('endTime'),
-            fridayEndTime: r.get('fridayEndTime') || '',
-            saturdayEndTime: r.get('saturdayEndTime') || '',
-            checkOutAfterMinutes: parseInt(r.get('checkOutAfterMinutes') || '120', 10),
-            crossesMidnight: String(r.get('crossesMidnight')).toLowerCase() === 'true',
-            isActive: String(r.get('isActive')).toLowerCase() === 'true',
-            unit: r.get('unit') || ''
-          }));
-        }
-      } else {
-        attendanceList = db.attendance;
-        employeeList = db.employees;
-        shiftList = [
-          { name: 'Pagi', startTime: '07:00', endTime: '14:00', checkOutAfterMinutes: 120, crossesMidnight: false, isActive: true },
-          { name: 'Sore', startTime: '14:00', endTime: '21:00', checkOutAfterMinutes: 120, crossesMidnight: false, isActive: true },
-          { name: 'Malam', startTime: '21:00', endTime: '07:00', checkOutAfterMinutes: 120, crossesMidnight: true, isActive: true },
-        ];
-      }
-
-      if (attendanceList.length === 0) return 0;
-
-      const inRecords = attendanceList.filter(a => a.type === 'in');
-      const outRecords = attendanceList.filter(a => a.type === 'out');
-      const now = new Date();
-
-      const getJakartaDateStr = (d: Date) => {
-        const dateFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' });
-        const parts = dateFormatter.formatToParts(d);
-        const year = parts.find(p => p.type === 'year')?.value;
-        const month = parts.find(p => p.type === 'month')?.value;
-        const day = parts.find(p => p.type === 'day')?.value;
-        return `${year}-${month}-${day}`;
-      };
-
-      const todayStr = getJakartaDateStr(now);
-      const missingOuts: any[] = [];
-
-      for (const inRec of inRecords) {
-        if (!inRec.nip || !inRec.date) continue;
-
-        // Check if there is already an 'out' record matching this NIP and date
-        if (outRecords.some(o => o.nip === inRec.nip && o.date === inRec.date)) continue;
-
-        // Find matching shift
-        let targetShift = shiftList.find(s => s.name && inRec.shift && s.name.trim().toLowerCase() === inRec.shift.trim().toLowerCase());
-        
-        if (!targetShift && inRec.time) {
-          const timeMatch = String(inRec.time).match(/(\d+)[.:](\d+)/);
-          if (timeMatch) {
-            let inHr = parseInt(timeMatch[1], 10);
-            let inMin = parseInt(timeMatch[2], 10);
-            const lowerTime = String(inRec.time).toLowerCase();
-            if (lowerTime.includes('pm') && inHr < 12) inHr += 12;
-            else if (lowerTime.includes('am') && inHr === 12) inHr = 0;
-            
-            const inMinutes = inHr * 60 + inMin;
-            let minDiff = Infinity;
-
-            shiftList.filter(s => s.isActive !== false).forEach(s => {
-              if (!s.startTime) return;
-              const [sHr, sMin] = s.startTime.split(':').map(Number);
-              let diff = Math.abs(inMinutes - (sHr * 60 + sMin));
-              if (diff > 720) diff = 1440 - diff;
-              if (diff < minDiff) {
-                minDiff = diff;
-                targetShift = s;
-              }
-            });
-          }
-        }
-
-        if (!targetShift) {
-          const empUnit = employeeList.find(e => e.nip === inRec.nip)?.unit || '';
-          const activeShifts = shiftList.filter(s => s.isActive !== false);
-          targetShift = activeShifts.find(s => s.unit && s.unit === empUnit) || activeShifts[0] || {
-            name: inRec.shift || 'Pagi',
-            startTime: '07:00',
-            endTime: '14:00',
-            checkOutAfterMinutes: 120,
-            crossesMidnight: false
-          };
-        }
-
-        const recDateObj = new Date(inRec.date + 'T00:00:00');
-        const isFriday = recDateObj.getDay() === 5;
-        const isSaturday = recDateObj.getDay() === 6;
-
-        let endTimeStr = targetShift.endTime;
-        if (isFriday && targetShift.fridayEndTime) endTimeStr = targetShift.fridayEndTime;
-        if (isSaturday && targetShift.saturdayEndTime) endTimeStr = targetShift.saturdayEndTime;
-
-        if (!endTimeStr) {
-          const lowerName = (targetShift.name || inRec.shift || '').toLowerCase();
-          if (lowerName.includes('pagi')) endTimeStr = '14:00';
-          else if (lowerName.includes('sore')) endTimeStr = '21:00';
-          else if (lowerName.includes('malam')) endTimeStr = '07:00';
-          else endTimeStr = '16:00';
-        }
-
-        const [endHr, endMin] = endTimeStr.split(':').map(Number);
-        const endDateTime = new Date(inRec.date + 'T00:00:00');
-        endDateTime.setHours(endHr, endMin, 0, 0);
-
-        const isCrossesMidnight = targetShift.crossesMidnight || (targetShift.startTime && parseInt(targetShift.startTime.split(':')[0], 10) > endHr);
-        if (isCrossesMidnight) {
-          endDateTime.setDate(endDateTime.getDate() + 1);
-        }
-
-        const checkOutAfterMinutes = targetShift.checkOutAfterMinutes || 120;
-        endDateTime.setMinutes(endDateTime.getMinutes() + checkOutAfterMinutes);
-
-        const isPastDate = inRec.date < todayStr && (!isCrossesMidnight || inRec.date < getJakartaDateStr(new Date(now.getTime() - 86400000)));
-
-        if (now > endDateTime || isPastDate) {
-          // Auto checkout time: shift end time minus 1 hour
-          const autoCheckoutHour = (endHr - 1 + 24) % 24;
-          const autoCheckoutTimeStr = `${autoCheckoutHour.toString().padStart(2, '0')}:${endMin.toString().padStart(2, '0')}`;
-
-          const statusToSave = inRec.status || 'Hadir';
-
-          missingOuts.push({
-            id: (Date.now() + missingOuts.length).toString(),
-            nip: inRec.nip,
-            name: inRec.name,
-            date: inRec.date,
-            time: autoCheckoutTimeStr,
-            type: 'out',
-            location: inRec.location,
-            status: statusToSave,
-            photoUrl: '',
-            shift: targetShift.name || inRec.shift || 'Reguler'
-          });
-        }
-      }
-
-      if (missingOuts.length > 0) {
-        if (doc && attSheet) {
-          const rowsToAdd = missingOuts.map(rec => ({
-            ...rec,
-            location: typeof rec.location === 'object' ? JSON.stringify(rec.location) : rec.location
-          }));
-          await attSheet.addRows(rowsToAdd);
-          delete cache['attendance'];
-        } else {
-          missingOuts.forEach(rec => db.attendance.push(rec));
-        }
-        fixedCount = missingOuts.length;
-        console.log(`[Auto-Checkout] Recorded ${fixedCount} auto check-outs at shift end minus 1 hour.`);
-      }
-    } catch (error) {
-      console.error('Error during auto-checkout:', error);
-    }
-    return fixedCount;
-  }
-
+  // --- Attendance API ---
   app.get('/api/attendance', async (req, res) => {
-    const { startDate, endDate } = req.query;
-    
-    // Trigger auto-checkout check before retrieving records
-    await runAutoCheckout();
-
-    let allAttendance: any[] = [];
     if (doc) {
       try {
-        allAttendance = await getCachedData('attendance', async () => {
-          const sheet = await getOrCreateSheet('Attendance', ['id', 'nip', 'name', 'date', 'time', 'type', 'location', 'status', 'photoUrl', 'shift']);
-          if (sheet) {
-            const rows = await sheet.getRows();
-            return rows.map(row => ({
-              id: row.get('id'),
-              nip: row.get('nip'),
-              name: row.get('name'),
-              date: row.get('date'),
-              time: row.get('time'),
-              type: row.get('type'),
-              location: (() => {
-                try { return JSON.parse(row.get('location')); }
-                catch (e) { return row.get('location'); }
-              })(),
-              status: row.get('status'),
-              photoUrl: row.get('photoUrl') && row.get('photoUrl').startsWith('data:image') 
-                ? `/api/attendance/${row.get('id')}/photo`
-                : (row.get('photoUrl') || ''),
-              shift: row.get('shift')
-            }));
-          }
-          return [];
-        });
+        if (cache['attendance'] && Date.now() - cache['attendance'].timestamp < CACHE_DURATION) {
+          return res.json(cache['attendance'].data);
+        }
+        const sheet = await getOrCreateSheet('Attendance', ['id', 'nip', 'name', 'date', 'time', 'type', 'location', 'status', 'photoUrl']);
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const attendance = rows.map(row => ({
+            id: row.get('id'),
+            nip: row.get('nip'),
+            name: row.get('name'),
+            date: row.get('date'),
+            time: row.get('time'),
+            type: row.get('type'),
+            location: (() => {
+              try { return JSON.parse(row.get('location')); }
+              catch (e) { return row.get('location'); }
+            })(),
+            status: (row.get('type') === 'sakit' && (row.get('status') === 'izin' || row.get('status') === 'Izin')) ? 'Sakit' : 
+                    (row.get('type') === 'dinas_luar' && (row.get('status') === 'izin' || row.get('status') === 'Izin')) ? 'Dinas Luar' : 
+                    row.get('status'),
+            photoUrl: row.get('photoUrl')
+          }));
+          cache['attendance'] = { timestamp: Date.now(), data: attendance };
+          return res.json(attendance);
+        }
       } catch (error) {
         console.error('Error fetching attendance from spreadsheet:', error);
       }
-    } else {
-      allAttendance = db.attendance;
     }
-
-    const filterByDateRange = (start: string, end: string) => {
-      return allAttendance.filter(a => {
-        const aStart = a.date;
-        const aEnd = (a.location && typeof a.location === 'object' && a.location.endDate) ? a.location.endDate : a.date;
-        return aStart <= end && aEnd >= start;
-      });
-    };
-
-    let filteredAttendance = allAttendance;
-    if (startDate && endDate) {
-      filteredAttendance = filterByDateRange(startDate as string, endDate as string);
-    } else {
-      // Default to last month and current month if no range given 
-      const today = new Date();
-      const prevMonthObj = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const firstDay = `${prevMonthObj.getFullYear()}-${String(prevMonthObj.getMonth() + 1).padStart(2, '0')}-01`;
-      
-      const nextMonthObj = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      const nextMonthEnd = `${nextMonthObj.getFullYear()}-${String(nextMonthObj.getMonth() + 1).padStart(2, '0')}-${String(nextMonthObj.getDate()).padStart(2, '0')}`;
-      filteredAttendance = filterByDateRange(firstDay, nextMonthEnd);
-    }
-
-    return res.json(filteredAttendance);
+    res.json(db.attendance.map(a => ({
+      ...a,
+      status: (a.type === 'sakit' && (a.status === 'izin' || a.status === 'Izin')) ? 'Sakit' : 
+              (a.type === 'dinas_luar' && (a.status === 'izin' || a.status === 'Izin')) ? 'Dinas Luar' : 
+              a.status
+    })));
   });
 
-  app.get('/api/attendance/:id/photo', async (req, res) => {
+  app.get('/api/attendance/auto-checkout-check', async (req, res) => {
     try {
-      const sheet = await getOrCreateSheet('Attendance', ['id', 'nip', 'name', 'date', 'time', 'type', 'location', 'status', 'photoUrl', 'shift']);
-      if (!sheet) return res.status(500).send('Database unavailable');
-      
-      const rows = await sheet.getRows();
-      const targetRow = rows.find(row => row.get('id') === req.params.id);
-      
-      if (!targetRow) return res.status(404).send('Not found');
-      
-      const photoUrl = targetRow.get('photoUrl');
-      if (!photoUrl || !photoUrl.startsWith('data:image')) {
-        return res.status(404).send('No image for this record');
+      let allAttendance = [];
+      let allShifts = [];
+      let allEmployees = [];
+
+      if (doc) {
+        const attSheet = await getOrCreateSheet('Attendance', ['id', 'nip', 'name', 'date', 'time', 'type', 'location', 'status', 'photoUrl', 'shift']);
+        if (attSheet) {
+          const rows = await attSheet.getRows();
+          allAttendance = rows.map(row => ({
+            id: row.get('id'),
+            nip: row.get('nip'),
+            name: row.get('name'),
+            date: row.get('date'),
+            time: row.get('time'),
+            type: row.get('type'),
+            shift: row.get('shift'),
+            location: (() => {
+              try { return JSON.parse(row.get('location')); }
+              catch (e) { return row.get('location'); }
+            })(),
+            status: row.get('status'),
+            photoUrl: row.get('photoUrl')
+          }));
+        }
+
+        const shiftSheet = await getOrCreateSheet('Shifts', ['id', 'name', 'startTime', 'endTime', 'fridayEndTime', 'saturdayEndTime', 'checkInBeforeMinutes', 'checkInAfterMinutes', 'checkOutBeforeMinutes', 'checkOutAfterMinutes', 'crossesMidnight', 'isActive', 'unit', 'allowHolidayCheckIn']);
+        if (shiftSheet) {
+          const rows = await shiftSheet.getRows();
+          allShifts = rows.map(row => ({
+            id: row.get('id'),
+            name: row.get('name'),
+            startTime: row.get('startTime'),
+            endTime: row.get('endTime'),
+            fridayEndTime: row.get('fridayEndTime'),
+            saturdayEndTime: row.get('saturdayEndTime'),
+            isActive: String(row.get('isActive')).toLowerCase() === 'true',
+            unit: row.get('unit') || '',
+            allowHolidayCheckIn: String(row.get('allowHolidayCheckIn')).toLowerCase() === 'true'
+          }));
+        }
+
+        const empSheet = await getOrCreateSheet('Employees', ['id', 'name', 'nip', 'unit']);
+        if (empSheet) {
+          const rows = await empSheet.getRows();
+          allEmployees = rows.map(row => ({
+            nip: row.get('nip'),
+            unit: row.get('unit') || ''
+          }));
+        }
+      } else {
+         allEmployees = db.employees;
+         allAttendance = [...db.attendance];
       }
-      
-      // photoUrl format is usually like: data:image/jpeg;base64,/9j/4AAQ...
-      const matches = photoUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-      if (!matches || matches.length !== 3) {
-         return res.status(400).send('Invalid image data');
+
+      if (allShifts.length === 0) {
+        allShifts = [
+          { name: 'Reguler', startTime: '07:30', endTime: '16:00', fridayEndTime: '14:30', saturdayEndTime: '13:00', isActive: true, unit: '' }
+        ];
       }
+
+      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' });
+      const todayStr = formatter.format(new Date());
       
-      const mimeType = matches[1];
-      const buffer = Buffer.from(matches[2], 'base64');
-      
-      res.set('Content-Type', mimeType);
-      res.send(buffer);
+      let checkedOutCount = 0;
+      const pastInRecords = allAttendance.filter(a => a.type === 'in' && a.date < todayStr);
+
+      for (const inRecord of pastInRecords) {
+        let outDateObj = new Date(inRecord.date);
+        const outDateStr1 = formatter.format(outDateObj);
+        outDateObj.setDate(outDateObj.getDate() + 1);
+        const outDateStr2 = formatter.format(outDateObj);
+
+        let outFound = allAttendance.some(a => a.nip === inRecord.nip && a.type === 'out' && (a.date === outDateStr1 || a.date === outDateStr2));
+        
+        if (!outFound) {
+          let shiftName = inRecord.shift;
+          let targetShift = allShifts.find(s => s.name === shiftName);
+
+          if (!targetShift) {
+             const emp = allEmployees.find(e => e.nip === inRecord.nip);
+             let activeShiftsRaw = allShifts.filter(s => s.isActive);
+             let specificShifts = activeShiftsRaw.filter(s => emp && s.unit && s.unit === emp.unit);
+             let generalShifts = activeShiftsRaw.filter(s => !s.unit || s.unit === 'none' || s.unit === '');
+             let activeShifts = specificShifts.length > 0 ? specificShifts : generalShifts;
+             targetShift = activeShifts[0] || allShifts[0];
+          }
+
+          if (targetShift) {
+             const inDate = new Date(inRecord.date);
+             const dayOfWeek = inDate.getDay(); 
+             let endTimeStr = targetShift.endTime;
+             if (dayOfWeek === 5 && targetShift.fridayEndTime) endTimeStr = targetShift.fridayEndTime;
+             if (dayOfWeek === 6 && targetShift.saturdayEndTime) endTimeStr = targetShift.saturdayEndTime;
+             if (!endTimeStr) endTimeStr = '16:00'; 
+
+             let [endHour, endMin] = endTimeStr.split(':').map(Number);
+             const [startHour] = (targetShift.startTime || '07:30').split(':').map(Number);
+
+             let newEndHour = endHour - 1;
+             if (newEndHour < 0) {
+                newEndHour += 24;
+             }
+             
+             let actualOutDateObj = new Date(inRecord.date);
+             if (startHour > endHour) { 
+                actualOutDateObj.setDate(actualOutDateObj.getDate() + 1);
+             }
+
+             const outDateStr = formatter.format(actualOutDateObj);
+             const outTimeStr = `${String(newEndHour).padStart(2, '0')}.${String(endMin).padStart(2, '0')}`;
+
+             const newOutRecord = {
+                 id: Date.now().toString() + Math.random().toString().substring(2, 6),
+                 nip: inRecord.nip,
+                 name: inRecord.name,
+                 date: outDateStr,
+                 time: outTimeStr,
+                 type: 'out',
+                 location: inRecord.location || '',
+                 status: 'Hadir (Pulang Cepat)',
+                 photoUrl: inRecord.photoUrl || '' 
+             };
+
+             if (doc) {
+               const attSheet = await getOrCreateSheet('Attendance', ['id', 'nip', 'name', 'date', 'time', 'type', 'location', 'status', 'photoUrl', 'shift']);
+               if (attSheet) {
+                 await attSheet.addRow({
+                    ...newOutRecord,
+                    location: typeof newOutRecord.location === 'object' ? JSON.stringify(newOutRecord.location) : newOutRecord.location
+                 });
+                 delete cache['attendance'];
+               }
+             } else {
+                 db.attendance.push(newOutRecord);
+             }
+             
+             allAttendance.push(newOutRecord);
+             checkedOutCount++;
+          }
+        }
+      }
+      res.json({ success: true, checkedOutCount });
     } catch (e) {
-      console.error(e);
-      res.status(500).send('Internal error');
+      console.error("Error in auto-checkout-check:", e);
+      res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) });
     }
   });
 
@@ -993,22 +851,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     const attendanceData = req.body;
     // attendanceData: { nip, name, date, time, type, location, status, photoUrl }
     
-    // Prevent overriding timezone from client. Enforce Server Time (Asia/Jakarta)
-    if (attendanceData.type === 'in' || attendanceData.type === 'out') {
-      const now = new Date();
-      
-      const timeFormatter = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
-      let serverTimeStr = timeFormatter.format(now).replace('.', ':');
-      attendanceData.time = serverTimeStr;
-
-      const dateFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' });
-      const parts = dateFormatter.formatToParts(now);
-      const year = parts.find(p => p.type === 'year')?.value;
-      const month = parts.find(p => p.type === 'month')?.value;
-      const day = parts.find(p => p.type === 'day')?.value;
-      attendanceData.date = `${year}-${month}-${day}`;
-    }
-
     if (doc) {
       try {
         const sheet = await getOrCreateSheet('Attendance', ['id', 'nip', 'name', 'date', 'time', 'type', 'location', 'status', 'photoUrl']);
@@ -1040,48 +882,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     }
 
     res.json({ success: true, message: 'Absensi berhasil dicatat' });
-  });
-
-  app.post('/api/attendance/bulk', async (req, res) => {
-    const { records } = req.body;
-    if (!Array.isArray(records) || records.length === 0) {
-      return res.json({ success: true, message: 'No records to add' });
-    }
-    
-    if (doc) {
-      try {
-        const sheet = await getOrCreateSheet('Attendance', ['id', 'nip', 'name', 'date', 'time', 'type', 'location', 'status', 'photoUrl', 'shift']);
-        if (sheet) {
-          const rowsToAdd = records.map((attendanceData: any, index: number) => ({
-            id: (Date.now() + index).toString(),
-            ...attendanceData,
-            photoUrl: attendanceData.photoUrl || '',
-            location: typeof attendanceData.location === 'object' ? JSON.stringify(attendanceData.location) : attendanceData.location
-          }));
-          await sheet.addRows(rowsToAdd);
-          delete cache['attendance'];
-        }
-      } catch (error) {
-        console.error('Error saving bulk attendance:', error);
-        return res.status(500).json({ success: false, message: 'Gagal menyimpan bulk absensi.' });
-      }
-    } else {
-      records.forEach((rec: any, i: number) => {
-        db.attendance.push({ id: (Date.now() + i).toString(), ...rec } as any);
-      });
-    }
-
-    res.json({ success: true, message: 'Bulk absensi berhasil dicatat' });
-  });
-
-  app.post('/api/attendance/auto-checkout-check', async (req, res) => {
-    try {
-      const fixedCount = await runAutoCheckout();
-      return res.json({ success: true, fixedCount });
-    } catch (error) {
-      console.error('Error in /api/attendance/auto-checkout-check:', error);
-      return res.status(500).json({ success: false, message: 'Gagal auto-checkout' });
-    }
   });
 
   app.put('/api/attendance/:id', async (req, res) => {
@@ -1209,7 +1009,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     if (resend) {
       try {
         await resend.emails.send({
-          from: 'Absensi Digital <onboarding@resend.dev>',
+          from: 'Si Abon Megilan <onboarding@resend.dev>',
           to: foundUser.email,
           subject: 'Reset Password - Si Abon Megilan',
           html: `<p>Halo ${foundUser.name},</p><p>Klik tautan berikut untuk mereset password Anda:</p><p><a href="${resetLink}">${resetLink}</a></p><p>Tautan ini akan kedaluwarsa dalam 1 jam.</p>`,
@@ -1306,21 +1106,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
               await userRow.save();
               passwordUpdated = true;
               
-              if (userType === 'user') {
-                const userNip = userRow.get('nip');
-                if (userNip) {
-                  const empSheet = await getSheet('Employees');
-                  if (empSheet) {
-                    const empRows = await empSheet.getRows();
-                    const empRow = empRows.find(r => r.get('nip') === userNip);
-                    if (empRow) {
-                      empRow.set('password', newPassword);
-                      await empRow.save();
-                    }
-                  }
-                }
-              }
-              
               // Clear cache
               if (sheetName === 'Admins') delete cache['admins'];
               if (sheetName === 'Employees') delete cache['employees'];
@@ -1365,22 +1150,23 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.get('/api/locations', async (req, res) => {
     if (doc) {
       try {
-        const locations = await getCachedData('locations', async () => {
-          const sheet = await getOrCreateSheet('Locations', ['id', 'name', 'desa', 'kecamatan', 'kabupaten', 'coordinates', 'radius']);
-          if (sheet) {
-            const rows = await sheet.getRows();
-            return rows.map(row => ({
-              id: row.get('id'),
-              desa: row.get('desa') || row.get('name') || '',
-              kecamatan: row.get('kecamatan') || '',
-              kabupaten: row.get('kabupaten') || '',
-              coordinates: row.get('coordinates'),
-              radius: row.get('radius') || 250
-            }));
-          }
-          return [];
-        });
-        return res.json(locations);
+        if (cache['locations'] && Date.now() - cache['locations'].timestamp < CACHE_DURATION) {
+          return res.json(cache['locations'].data);
+        }
+        const sheet = await getOrCreateSheet('Locations', ['id', 'name', 'desa', 'kecamatan', 'kabupaten', 'coordinates', 'radius']);
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const locations = rows.map(row => ({
+            id: row.get('id'),
+            desa: row.get('desa') || row.get('name') || '',
+            kecamatan: row.get('kecamatan') || '',
+            kabupaten: row.get('kabupaten') || '',
+            coordinates: row.get('coordinates'),
+            radius: row.get('radius') || 250
+          }));
+          cache['locations'] = { data: locations, timestamp: Date.now() };
+          return res.json(locations);
+        }
       } catch (error) {
         console.error('Error fetching locations from spreadsheet:', error);
       }
@@ -1439,23 +1225,24 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.get('/api/units', async (req, res) => {
     if (doc) {
       try {
-        const units = await getCachedData('units', async () => {
-          const sheet = await getOrCreateSheet('Units', ['id', 'name']);
-          if (sheet) {
-            const rows = await sheet.getRows();
-            return rows.map(row => ({
-              id: row.get('id'),
-              name: row.get('name')
-            }));
-          }
-          return [];
-        });
-        return res.json(units);
+        if (cache['units'] && Date.now() - cache['units'].timestamp < CACHE_DURATION) {
+          return res.json(cache['units'].data);
+        }
+        const sheet = await getOrCreateSheet('Units', ['id', 'name']);
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const units = rows.map(row => ({
+            id: row.get('id'),
+            name: row.get('name')
+          }));
+          cache['units'] = { data: units, timestamp: Date.now() };
+          return res.json(units);
+        }
       } catch (error) {
-        console.error('Error fetching units:', error);
+        console.error('Error fetching units from spreadsheet:', error);
       }
     }
-    res.json((db as any).units || []);
+    res.json(db.units);
   });
 
   app.post('/api/units', async (req, res) => {
@@ -1464,32 +1251,16 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
       try {
         const sheet = await getOrCreateSheet('Units', ['id', 'name']);
         if (sheet) {
-          if (unit.id) {
-            const rows = await sheet.getRows();
-            const existingRow = rows.find(r => r.get('id') === unit.id);
-            if (existingRow) {
-              existingRow.set('name', unit.name || '');
-              await existingRow.save();
-            } else {
-              await sheet.addRow(unit);
-            }
-          } else {
-            unit.id = Date.now().toString();
-            await sheet.addRow(unit);
-          }
+          await sheet.addRow(unit);
           delete cache['units'];
         }
       } catch (error) {
-        console.error('Error saving unit:', error);
+        console.error('Error saving unit to spreadsheet:', error);
       }
     } else {
-      unit.id = unit.id || Date.now().toString();
-      if (!(db as any).units) (db as any).units = [];
-      const index = (db as any).units.findIndex((u: any) => u.id === unit.id);
-      if (index >= 0) (db as any).units[index] = unit;
-      else (db as any).units.push(unit);
+      db.units.push(unit);
     }
-    res.json({ success: true, message: 'Unit berhasil disimpan' });
+    res.json({ success: true, message: 'Unit Layanan berhasil ditambahkan' });
   });
 
   app.delete('/api/units/:id', async (req, res) => {
@@ -1506,43 +1277,43 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
           }
         }
       } catch (error) {
-        console.error('Error deleting unit:', error);
+        console.error('Error deleting unit from spreadsheet:', error);
       }
     } else {
-       if ((db as any).units) (db as any).units = (db as any).units.filter((u: any) => u.id !== id);
+      db.units = db.units.filter(u => u.id !== id);
     }
-    res.json({ success: true, message: 'Unit berhasil dihapus' });
+    res.json({ success: true, message: 'Unit Layanan berhasil dihapus' });
   });
 
   // --- Shifts API ---
   app.get('/api/shifts', async (req, res) => {
     if (doc) {
       try {
-        const shifts = await getCachedData('shifts', async () => {
-          const sheet = await getOrCreateSheet('Shifts', ['id', 'name', 'startTime', 'endTime', 'fridayEndTime', 'saturdayEndTime', 'checkInBeforeMinutes', 'checkInAfterMinutes', 'checkOutBeforeMinutes', 'checkOutAfterMinutes', 'crossesMidnight', 'isActive', 'unit', 'isOffSunday', 'isOffHoliday']);
-          if (sheet) {
-            const rows = await sheet.getRows();
-            return rows.map(row => ({
-              id: row.get('id'),
-              name: row.get('name'),
-              startTime: row.get('startTime'),
-              endTime: row.get('endTime'),
-              fridayEndTime: row.get('fridayEndTime') || '',
-              saturdayEndTime: row.get('saturdayEndTime') || '',
-              checkInBeforeMinutes: parseInt(row.get('checkInBeforeMinutes') || '60'),
-              checkInAfterMinutes: parseInt(row.get('checkInAfterMinutes') || '15'),
-              checkOutBeforeMinutes: parseInt(row.get('checkOutBeforeMinutes') || '10'),
-              checkOutAfterMinutes: parseInt(row.get('checkOutAfterMinutes') || '120'),
-              crossesMidnight: String(row.get('crossesMidnight')).toLowerCase() === 'true',
-              isActive: String(row.get('isActive')).toLowerCase() === 'true',
-              unit: row.get('unit') || '',
-              isOffSunday: String(row.get('isOffSunday')).toLowerCase() === 'true',
-              isOffHoliday: String(row.get('isOffHoliday')).toLowerCase() === 'true'
-            }));
-          }
-          return [];
-        });
-        return res.json(shifts);
+        if (cache['shifts'] && Date.now() - cache['shifts'].timestamp < CACHE_DURATION) {
+          return res.json(cache['shifts'].data);
+        }
+        const sheet = await getOrCreateSheet('Shifts', ['id', 'name', 'startTime', 'endTime', 'fridayEndTime', 'saturdayEndTime', 'checkInBeforeMinutes', 'checkInAfterMinutes', 'checkOutBeforeMinutes', 'checkOutAfterMinutes', 'crossesMidnight', 'isActive', 'unit', 'allowHolidayCheckIn']);
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const shifts = rows.map(row => ({
+            id: row.get('id'),
+            name: row.get('name'),
+            startTime: row.get('startTime'),
+            endTime: row.get('endTime'),
+            fridayEndTime: row.get('fridayEndTime') || '',
+            saturdayEndTime: row.get('saturdayEndTime') || '',
+            checkInBeforeMinutes: parseInt(row.get('checkInBeforeMinutes') || '60'),
+            checkInAfterMinutes: parseInt(row.get('checkInAfterMinutes') || '15'),
+            checkOutBeforeMinutes: parseInt(row.get('checkOutBeforeMinutes') || '10'),
+            checkOutAfterMinutes: parseInt(row.get('checkOutAfterMinutes') || '120'),
+            crossesMidnight: String(row.get('crossesMidnight')).toLowerCase() === 'true',
+            isActive: String(row.get('isActive')).toLowerCase() === 'true',
+            unit: row.get('unit') || '',
+            allowHolidayCheckIn: String(row.get('allowHolidayCheckIn')).toLowerCase() === 'true'
+          }));
+          cache['shifts'] = { timestamp: Date.now(), data: shifts };
+          return res.json(shifts);
+        }
       } catch (error) {
         console.error('Error fetching shifts from spreadsheet:', error);
       }
@@ -1557,7 +1328,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     const shift = req.body;
     if (doc) {
       try {
-        const sheet = await getOrCreateSheet('Shifts', ['id', 'name', 'startTime', 'endTime', 'fridayEndTime', 'saturdayEndTime', 'checkInBeforeMinutes', 'checkInAfterMinutes', 'checkOutBeforeMinutes', 'checkOutAfterMinutes', 'crossesMidnight', 'isActive', 'unit', 'isOffSunday', 'isOffHoliday']);
+        const sheet = await getOrCreateSheet('Shifts', ['id', 'name', 'startTime', 'endTime', 'fridayEndTime', 'saturdayEndTime', 'checkInBeforeMinutes', 'checkInAfterMinutes', 'checkOutBeforeMinutes', 'checkOutAfterMinutes', 'crossesMidnight', 'isActive', 'unit', 'allowHolidayCheckIn']);
         if (sheet) {
           await sheet.addRow({
             ...shift,
@@ -1565,11 +1336,10 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
             checkInAfterMinutes: (shift.checkInAfterMinutes || 15).toString(),
             checkOutBeforeMinutes: (shift.checkOutBeforeMinutes || 10).toString(),
             checkOutAfterMinutes: (shift.checkOutAfterMinutes || 120).toString(),
-            crossesMidnight: shift.crossesMidnight.toString(),
-            isActive: shift.isActive.toString(),
+            crossesMidnight: (shift.crossesMidnight || false).toString(),
+            isActive: (shift.isActive !== undefined ? shift.isActive : true).toString(),
             unit: shift.unit || '',
-            isOffSunday: (shift.isOffSunday || false).toString(),
-            isOffHoliday: (shift.isOffHoliday || false).toString()
+            allowHolidayCheckIn: (shift.allowHolidayCheckIn || false).toString()
           });
           delete cache['shifts'];
         }
@@ -1619,11 +1389,10 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
             rowToUpdate.set('checkInAfterMinutes', (shift.checkInAfterMinutes || 15).toString());
             rowToUpdate.set('checkOutBeforeMinutes', (shift.checkOutBeforeMinutes || 10).toString());
             rowToUpdate.set('checkOutAfterMinutes', (shift.checkOutAfterMinutes || 120).toString());
-            rowToUpdate.set('crossesMidnight', shift.crossesMidnight.toString());
-            rowToUpdate.set('isActive', shift.isActive.toString());
+            rowToUpdate.set('crossesMidnight', (shift.crossesMidnight || false).toString());
+            rowToUpdate.set('isActive', (shift.isActive !== undefined ? shift.isActive : true).toString());
             rowToUpdate.set('unit', shift.unit || '');
-            rowToUpdate.set('isOffSunday', (shift.isOffSunday || false).toString());
-            rowToUpdate.set('isOffHoliday', (shift.isOffHoliday || false).toString());
+            rowToUpdate.set('allowHolidayCheckIn', (shift.allowHolidayCheckIn || false).toString());
             await rowToUpdate.save();
             delete cache['shifts'];
           }
@@ -1640,22 +1409,23 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.get('/api/announcements', async (req, res) => {
     if (doc) {
       try {
-        const announcements = await getCachedData('announcements', async () => {
-          const sheet = await getOrCreateSheet('Announcements', ['id', 'title', 'content', 'date', 'expiryDate', 'isActive']);
-          if (sheet) {
-            const rows = await sheet.getRows();
-            return rows.map(row => ({
-              id: row.get('id'),
-              title: row.get('title'),
-              content: row.get('content'),
-              date: row.get('date'),
-              expiryDate: row.get('expiryDate'),
-              isActive: String(row.get('isActive')).toLowerCase() === 'true'
-            }));
-          }
-          return [];
-        });
-        return res.json(announcements);
+        if (cache['announcements'] && Date.now() - cache['announcements'].timestamp < CACHE_DURATION) {
+          return res.json(cache['announcements'].data);
+        }
+        const sheet = await getOrCreateSheet('Announcements', ['id', 'title', 'content', 'date', 'expiryDate', 'isActive']);
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const announcements = rows.map(row => ({
+            id: row.get('id'),
+            title: row.get('title'),
+            content: row.get('content'),
+            date: row.get('date'),
+            expiryDate: row.get('expiryDate'),
+            isActive: String(row.get('isActive')).toLowerCase() === 'true'
+          }));
+          cache['announcements'] = { timestamp: Date.now(), data: announcements };
+          return res.json(announcements);
+        }
       } catch (error) {
         console.error('Error fetching announcements from spreadsheet:', error);
       }
@@ -1732,19 +1502,20 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.get('/api/holidays', async (req, res) => {
     if (doc) {
       try {
-        const items = await getCachedData('holidays', async () => {
-          const sheet = await getOrCreateSheet('Holidays', ['id', 'date', 'name']);
-          if (sheet) {
-            const rows = await sheet.getRows();
-            return rows.map(row => ({
-              id: row.get('id'),
-              date: row.get('date'),
-              name: row.get('name')
-            }));
-          }
-          return [];
-        });
-        return res.json(items);
+        if (cache['holidays'] && Date.now() - cache['holidays'].timestamp < CACHE_DURATION) {
+          return res.json(cache['holidays'].data);
+        }
+        const sheet = await getOrCreateSheet('Holidays', ['id', 'date', 'name']);
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const items = rows.map(row => ({
+            id: row.get('id'),
+            date: row.get('date'),
+            name: row.get('name')
+          }));
+          cache['holidays'] = { data: items, timestamp: Date.now() };
+          return res.json(items);
+        }
       } catch (error) {
         console.error('Error fetching from spreadsheet:', error);
       }
@@ -1801,24 +1572,24 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.get('/api/settings', async (req, res) => {
     if (doc) {
       try {
-        const settingsPayload = await getCachedData('settings', async () => {
-          const sheet = await getOrCreateSheet('Settings', ['key', 'value']);
-          if (sheet) {
-            const rows = await sheet.getRows();
-            const settings: any = {};
-            rows.forEach(row => {
-              try {
-                settings[row.get('key')] = JSON.parse(row.get('value'));
-              } catch (e) {
-                settings[row.get('key')] = row.get('value');
-              }
-            });
-            return settings;
+        if (cache['settings'] && Date.now() - cache['settings'].timestamp < CACHE_DURATION) {
+          return res.json(cache['settings'].data);
+        }
+        const sheet = await getOrCreateSheet('Settings', ['key', 'value']);
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const settings: any = {};
+          rows.forEach(row => {
+            try {
+              settings[row.get('key')] = JSON.parse(row.get('value'));
+            } catch (e) {
+              settings[row.get('key')] = row.get('value');
+            }
+          });
+          if (Object.keys(settings).length > 0) {
+            cache['settings'] = { timestamp: Date.now(), data: settings };
+            return res.json(settings);
           }
-          return {};
-        });
-        if (Object.keys(settingsPayload).length > 0) {
-          return res.json(settingsPayload);
         }
       } catch (error) {
         console.error('Error fetching settings from spreadsheet:', error);
@@ -1859,5 +1630,40 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     res.json({ success: true, message: 'Pengaturan berhasil disimpan' });
   });
 
-  // NOTE: Static file serving and app.listen have been moved to start.ts
-  // This allows Vercel to import this file directly without starting a server.
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else if (!process.env.VERCEL) {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
+
+  return app;
+}
+
+let appPromise: Promise<express.Express>;
+
+if (!process.env.VERCEL) {
+  startServer();
+} else {
+  appPromise = startServer();
+}
+
+export default async function handler(req: any, res: any) {
+  const app = await appPromise;
+  app(req, res);
+}

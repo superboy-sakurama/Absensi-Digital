@@ -174,11 +174,11 @@ export default function AdminLayout() {
                       <DropdownMenuItem render={<Link to="/admin/employees?tab=lokasi" className="w-full cursor-pointer" />}>
                         Alamat Kantor
                       </DropdownMenuItem>
-                      <DropdownMenuItem render={<Link to="/admin/employees?tab=unit" className="w-full cursor-pointer" />}>
-                        Unit Layanan
-                      </DropdownMenuItem>
                       <DropdownMenuItem render={<Link to="/admin/employees?tab=shift" className="w-full cursor-pointer" />}>
                         Shift
+                      </DropdownMenuItem>
+                      <DropdownMenuItem render={<Link to="/admin/employees?tab=unit" className="w-full cursor-pointer" />}>
+                        Unit Layanan
                       </DropdownMenuItem>
                       <DropdownMenuItem render={<Link to="/admin/employees?tab=admin" className="w-full cursor-pointer" />}>
                         Administrator
@@ -262,8 +262,8 @@ export default function AdminLayout() {
                           <DropdownMenuLabel>Master Data</DropdownMenuLabel>
                           <DropdownMenuItem render={<Link to="/admin/employees?tab=karyawan" className="w-full cursor-pointer pl-6" />}>Karyawan</DropdownMenuItem>
                           <DropdownMenuItem render={<Link to="/admin/employees?tab=lokasi" className="w-full cursor-pointer pl-6" />}>Alamat Kantor</DropdownMenuItem>
-                          <DropdownMenuItem render={<Link to="/admin/employees?tab=unit" className="w-full cursor-pointer pl-6" />}>Unit Layanan</DropdownMenuItem>
                           <DropdownMenuItem render={<Link to="/admin/employees?tab=shift" className="w-full cursor-pointer pl-6" />}>Shift</DropdownMenuItem>
+                          <DropdownMenuItem render={<Link to="/admin/employees?tab=unit" className="w-full cursor-pointer pl-6" />}>Unit Layanan</DropdownMenuItem>
                           <DropdownMenuItem render={<Link to="/admin/employees?tab=admin" className="w-full cursor-pointer pl-6" />}>Administrator</DropdownMenuItem>
                         </DropdownMenuGroup>
                         <DropdownMenuSeparator />

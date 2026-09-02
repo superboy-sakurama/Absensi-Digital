@@ -27,16 +27,18 @@ export default function Login() {
   const [regUnit, setRegUnit] = useState('');
   const [regDesa, setRegDesa] = useState('');
   const [regOffice2, setRegOffice2] = useState('');
+  const [regOffice3, setRegOffice3] = useState('');
 
   // Forgot password state
   const [forgotEmail, setForgotEmail] = useState('');
 
+  const [units, setUnits] = useState<{id: string, name: string}[]>([]);
+  const [locations, setLocations] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const [units, setUnits] = useState<{id: string, name: string}[]>([]);
-  const [locations, setLocations] = useState<{id: string, desa: string}[]>([]);
 
-  const [appName, setAppName] = useState("Absensi Digital");
+  const [appName, setAppName] = useState("Si Abon Eiite App");
   const [appLogo, setAppLogo] = useState("");
 
   useEffect(() => {
@@ -75,25 +77,53 @@ export default function Login() {
     };
     fetchSettings();
 
-    const fetchUnitsAndLocations = async () => {
+    const fetchUnits = async () => {
       try {
-        const [unitsRes, locRes] = await Promise.all([
-          fetch('/api/units'),
-          fetch('/api/locations')
-        ]);
-        if (unitsRes.ok) {
-          const data = await unitsRes.json();
-          setUnits(data);
-        }
-        if (locRes.ok) {
-          const data = await locRes.json();
-          setLocations(data);
+        const response = await fetch('/api/units');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.length > 0) {
+            setUnits(data);
+          } else {
+            const savedUnits = localStorage.getItem('unitsData');
+            if (savedUnits) {
+              setUnits(JSON.parse(savedUnits));
+            }
+          }
         }
       } catch (error) {
-        console.error('Failed to fetch data:', error);
+        console.error('Failed to fetch units:', error);
+        const savedUnits = localStorage.getItem('unitsData');
+        if (savedUnits) {
+          setUnits(JSON.parse(savedUnits));
+        }
       }
     };
-    fetchUnitsAndLocations();
+    fetchUnits();
+
+    const fetchLocations = async () => {
+      try {
+        const response = await fetch('/api/locations');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.length > 0) {
+            setLocations(data);
+          } else {
+            const savedLocations = localStorage.getItem('locationsData');
+            if (savedLocations) {
+              setLocations(JSON.parse(savedLocations));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch locations:', error);
+        const savedLocations = localStorage.getItem('locationsData');
+        if (savedLocations) {
+          setLocations(JSON.parse(savedLocations));
+        }
+      }
+    };
+    fetchLocations();
   }, [navigate]);
 
   const generateDeviceId = async () => {
@@ -167,8 +197,9 @@ export default function Login() {
           gender: regGender,
           cluster: regCluster,
           unit: regUnit,
-          desa: regDesa,
-          office2: regOffice2 === 'none' ? '' : regOffice2
+          desa: regDesa === 'none' ? '' : regDesa,
+          office2: regOffice2 === 'none' ? '' : regOffice2,
+          office3: regOffice3 === 'none' ? '' : regOffice3
         }),
       });
 
@@ -185,6 +216,7 @@ export default function Login() {
         setRegUnit('');
         setRegDesa('');
         setRegOffice2('');
+        setRegOffice3('');
         setView('login');
       } else {
         toast.error(data.message || 'Pendaftaran gagal');
@@ -421,11 +453,11 @@ export default function Login() {
               <Label htmlFor="regDesa">Lokasi Kantor 1</Label>
               <Select value={regDesa} onValueChange={setRegDesa} required>
                 <SelectTrigger id="regDesa">
-                  <SelectValue placeholder="Pilih Lokasi Kantor Utama" />
+                  <SelectValue placeholder="Pilih Lokasi Kantor 1" />
                 </SelectTrigger>
                 <SelectContent>
-                  {locations.map((loc) => (
-                    <SelectItem key={`loc1-${loc.id}`} value={loc.desa}>{loc.desa}</SelectItem>
+                  {locations.map((loc: any) => (
+                    <SelectItem key={loc.id} value={loc.desa}>{loc.desa}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -435,12 +467,27 @@ export default function Login() {
               <Label htmlFor="regOffice2">Lokasi Kantor 2 (Opsional)</Label>
               <Select value={regOffice2} onValueChange={setRegOffice2}>
                 <SelectTrigger id="regOffice2">
-                  <SelectValue placeholder="Pilih Lokasi Kantor Kedua" />
+                  <SelectValue placeholder="Pilih Lokasi Kantor 2 (Opsional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Tidak Ada</SelectItem>
-                  {locations.map((loc) => (
-                    <SelectItem key={`loc2-${loc.id}`} value={loc.desa}>{loc.desa}</SelectItem>
+                  <SelectItem value="none">-- Kosongkan --</SelectItem>
+                  {locations.map((loc: any) => (
+                    <SelectItem key={loc.id} value={loc.desa}>{loc.desa}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="regOffice3">Lokasi Kantor 3 (Opsional)</Label>
+              <Select value={regOffice3} onValueChange={setRegOffice3}>
+                <SelectTrigger id="regOffice3">
+                  <SelectValue placeholder="Pilih Lokasi Kantor 3 (Opsional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">-- Kosongkan --</SelectItem>
+                  {locations.map((loc: any) => (
+                    <SelectItem key={loc.id} value={loc.desa}>{loc.desa}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

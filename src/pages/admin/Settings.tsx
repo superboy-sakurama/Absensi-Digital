@@ -21,7 +21,7 @@ export default function AdminSettings() {
 
   // State for General Settings
   const [generalSettings, setGeneralSettings] = useState({
-    appName: "Si Abon Eiite App",
+    appName: "Absensi Digital",
     appLogo: "",
     companyName: "Puskesmas Sehat",
     headName: "Dr. Budi Santoso",
@@ -131,39 +131,100 @@ export default function AdminSettings() {
   };
 
   const handleExportUsers = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Data User');
-    worksheet.addRow(['ID', 'Nama', 'Email', 'Role']);
-    worksheet.addRow(['1', 'Admin User', 'admin@puskesmas.com', 'Admin']);
-    worksheet.addRow(['2', 'Regular User', 'user@puskesmas.com', 'User']);
-    
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Data_User_${format(getServerTime(), 'yyyy-MM-dd')}.xlsx`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-    toast.success("Data User berhasil diekspor!");
+    try {
+      const response = await fetch('/api/employees');
+      if (!response.ok) throw new Error("Gagal mengambil data user");
+      const users = await response.json();
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Data User');
+      
+      // Header
+      worksheet.addRow(['No', 'NIP', 'Nama Lengkap', 'Email', 'Jenis Kelamin', 'Cluster', 'Unit Layanan', 'Lokasi Kantor 1', 'Lokasi Kantor 2', 'Lokasi Kantor 3']);
+      
+      // Styling header
+      worksheet.getRow(1).font = { bold: true };
+      
+      // DataRows
+      users.forEach((user: any, index: number) => {
+        worksheet.addRow([
+          index + 1,
+          user.nip || '-',
+          user.name || '-',
+          user.email || '-',
+          user.gender || '-',
+          user.cluster || '-',
+          user.unit || '-',
+          user.office || '-',
+          user.office2 || '-',
+          user.office3 || '-'
+        ]);
+      });
+      
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Data_User_${format(getServerTime(), 'yyyy-MM-dd')}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success("Data User berhasil diekspor!");
+    } catch (error) {
+      console.error(error);
+      toast.error("Gagal mengekspor data user");
+    }
   };
 
   const handleExportAbsensi = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Data Absensi');
-    worksheet.addRow(['Tanggal', 'Nama', 'Status', 'Jam Masuk']);
-    worksheet.addRow(['2026-04-01', 'Admin User', 'Hadir', '07:45']);
-    worksheet.addRow(['2026-04-01', 'Regular User', 'Hadir', '07:50']);
-    
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Data_Absensi_Semua_${format(getServerTime(), 'yyyy-MM-dd')}.xlsx`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-    toast.success("Data Absensi berhasil diekspor!");
+    try {
+      const response = await fetch('/api/attendance');
+      if (!response.ok) throw new Error("Gagal mengambil data absensi");
+      const attendance = await response.json();
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Data Absensi');
+      
+      // Header
+      worksheet.addRow(['No', 'Tanggal', 'NIP', 'Nama Lengkap', 'Shift', 'Unit', 'Tipe', 'Waktu', 'Status', 'Alamat', 'Koordinat Lokasi']);
+      
+      // Styling header
+      worksheet.getRow(1).font = { bold: true };
+      
+      // DataRows
+      attendance.forEach((att: any, index: number) => {
+        const typeStr = att.type === 'in' ? 'Masuk' : 'Pulang';
+        const coords = att.location?.lat && att.location?.lng ? `${att.location.lat}, ${att.location.lng}` : '';
+        const address = att.location?.address || '';
+        
+        worksheet.addRow([
+          index + 1,
+          att.date || '-',
+          att.nip || '-',
+          att.name || '-',
+          att.shiftName || '-',
+          att.unit || '-',
+          typeStr,
+          att.time || '-',
+          att.status || '-',
+          address,
+          coords
+        ]);
+      });
+      
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Data_Absensi_Semua_${format(getServerTime(), 'yyyy-MM-dd')}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success("Data Absensi berhasil diekspor!");
+    } catch (error) {
+      console.error(error);
+      toast.error("Gagal mengekspor data absensi");
+    }
   };
 
   return (

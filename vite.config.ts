@@ -14,15 +14,14 @@ export default defineConfig(({mode}) => {
         registerType: 'autoUpdate',
         injectRegister: 'auto',
         workbox: {
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
-          navigateFallbackDenylist: [/^\/api/]
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024 // 5MB
         },
         devOptions: {
-          enabled: false
+          enabled: true
         },
         manifest: {
-          name: 'Si Abon Elite App',
-          short_name: 'Si Abon',
+          name: 'e-Pusla App',
+          short_name: 'e-Pusla',
           theme_color: '#14b8a6',
           display: 'standalone',
           start_url: '/',
@@ -30,12 +29,14 @@ export default defineConfig(({mode}) => {
             {
               src: '/logo.png',
               sizes: '192x192',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any maskable'
             },
             {
               src: '/logo.png',
               sizes: '512x512',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any maskable'
             }
           ]
         }
@@ -54,9 +55,5 @@ export default defineConfig(({mode}) => {
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
     },
-    build: {
-      chunkSizeWarningLimit: 2000,
-    },
-    logLevel: 'error',
   };
 });

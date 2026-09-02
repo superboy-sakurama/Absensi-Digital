@@ -43,15 +43,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   useEffect(() => {
-    // Sync time in the background, but don't block the UI
     syncServerTime();
-
     // Re-sync every 30 minutes
     const interval = setInterval(syncServerTime, 30 * 60 * 1000);
-
-    return () => {
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, []);
 
   return (

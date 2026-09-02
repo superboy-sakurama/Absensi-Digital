@@ -22,12 +22,13 @@ export default function AdminEmployees() {
   };
 
   // State for Employees
-  const [employees, setEmployees] = useState<{id: string, name: string, nip: string, office: string, office2?: string, email: string, password?: string, gender?: string, cluster?: string, unit?: string}[]>([]);
+  const [employees, setEmployees] = useState<{id: string, name: string, nip: string, office: string, office2?: string, office3?: string, email: string, password?: string, gender?: string, cluster?: string, unit?: string}[]>([]);
   const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false);
   const [newEmpName, setNewEmpName] = useState("");
   const [newEmpNip, setNewEmpNip] = useState("");
   const [newEmpOffice, setNewEmpOffice] = useState("");
   const [newEmpOffice2, setNewEmpOffice2] = useState("");
+  const [newEmpOffice3, setNewEmpOffice3] = useState("");
   const [newEmpEmail, setNewEmpEmail] = useState("");
   const [newEmpGender, setNewEmpGender] = useState("");
   const [newEmpCluster, setNewEmpCluster] = useState("");
@@ -41,12 +42,6 @@ export default function AdminEmployees() {
   const [newLocName, setNewLocName] = useState("");
   const [newLocKecamatan, setNewLocKecamatan] = useState("");
   const [newLocCoords, setNewLocCoords] = useState("");
-
-  // State for Units
-  const [units, setUnits] = useState<{id: string, name: string}[]>([]);
-  const [isAddUnitOpen, setIsAddUnitOpen] = useState(false);
-  const [newUnitName, setNewUnitName] = useState("");
-  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
 
   // State for Shifts
   const [shifts, setShifts] = useState<{
@@ -76,9 +71,13 @@ export default function AdminEmployees() {
   const [newShiftCrossesMidnight, setNewShiftCrossesMidnight] = useState(false);
   const [newShiftIsActive, setNewShiftIsActive] = useState(true);
   const [newShiftUnit, setNewShiftUnit] = useState("");
-  const [newShiftIsOffSunday, setNewShiftIsOffSunday] = useState(false);
-  const [newShiftIsOffHoliday, setNewShiftIsOffHoliday] = useState(false);
+  const [newShiftAllowHolidayCheckIn, setNewShiftAllowHolidayCheckIn] = useState(false);
   const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
+
+  // State for Unit Layanan
+  const [units, setUnits] = useState<{id: string, name: string}[]>([]);
+  const [isAddUnitOpen, setIsAddUnitOpen] = useState(false);
+  const [newUnitName, setNewUnitName] = useState("");
 
   // State for Admins
   const [admins, setAdmins] = useState<{id: string, name: string, nip: string, email: string, phone: string, group: string, isActive: boolean, access: string[]}[]>([]);
@@ -146,20 +145,6 @@ export default function AdminEmployees() {
     };
     fetchAdmins();
 
-    // Fetch units from API
-    const fetchUnits = async () => {
-      try {
-        const response = await fetch('/api/units');
-        if (response.ok) {
-          const data = await response.json();
-          setUnits(data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch units:', error);
-      }
-    };
-    fetchUnits();
-
     // Fetch locations from API
     const fetchLocations = async () => {
       try {
@@ -205,6 +190,36 @@ export default function AdminEmployees() {
       }
     };
     fetchShifts();
+    // Fetch units from API
+    const fetchUnits = async () => {
+      try {
+        const response = await fetch('/api/units');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.length > 0) {
+            setUnits(data);
+          } else {
+            const savedUnits = localStorage.getItem('unitsData');
+            if (savedUnits) {
+              setUnits(JSON.parse(savedUnits));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch units:', error);
+        const savedUnits = localStorage.getItem('unitsData');
+        if (savedUnits) {
+          setUnits(JSON.parse(savedUnits));
+        } else {
+          setUnits([
+            { id: "1", name: "Manajemen" },
+            { id: "2", name: "Pustu" }
+          ]);
+        }
+      }
+    };
+    fetchUnits();
+
   }, []);
 
   const handleAddEmployee = async () => {
@@ -215,6 +230,7 @@ export default function AdminEmployees() {
         nip: newEmpNip,
         office: newEmpOffice,
         office2: newEmpOffice2 === "none" ? "" : newEmpOffice2,
+        office3: newEmpOffice3 === "none" ? "" : newEmpOffice3,
         email: newEmpEmail,
         gender: newEmpGender,
         cluster: newEmpCluster,
@@ -242,6 +258,7 @@ export default function AdminEmployees() {
           setNewEmpNip("");
           setNewEmpOffice("");
           setNewEmpOffice2("");
+          setNewEmpOffice3("");
           setNewEmpEmail("");
           setNewEmpGender("");
           setNewEmpCluster("");
@@ -300,8 +317,8 @@ export default function AdminEmployees() {
   const downloadTemplate = () => {
     const wsData = [
       ["Nama", "NIP", "Gender", "Klaster", "Unit", "Kantor", "Kantor2", "Email"],
-      ["Budi Santoso", "198001012005011001", "Laki-laki", "1", "Poli Umum", "Puskesmas Maju Jaya", "", "budi@example.com"],
-      ["Siti Aminah", "198502022010012002", "Perempuan", "2", "Poli Gigi", "Puskesmas Maju Jaya", "Pustu B", "siti@example.com"]
+      ["Budi Santoso", "198001012005011001", "Laki-laki", "1", "Poli Umum", "Puskesmas Sehat", "", "budi@example.com"],
+      ["Siti Aminah", "198502022010012002", "Perempuan", "2", "Poli Gigi", "Puskesmas Sehat", "Pustu B", "siti@example.com"]
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -338,13 +355,14 @@ export default function AdminEmployees() {
         const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
 
         // Expected headers mapping (adjust as needed based on Excel format)
-        // name, nip, office, office2, email, gender, cluster, unit
+        // name, nip, office, office2, office3, email, gender, cluster, unit
         const formattedEmployees = jsonData.map((row, index) => ({
           id: (Date.now() + index).toString(),
           name: row.Nama || row.name || "",
           nip: String(row.NIP || row.nip || ""),
           office: row.Kantor || row.office || "",
           office2: row.Kantor2 || row.office2 || "",
+          office3: row.Kantor3 || row.office3 || "",
           email: row.Email || row.email || "",
           gender: row.Gender || row.gender || row["Jenis Kelamin"] || "",
           cluster: row.Klaster || row.cluster || "",
@@ -456,69 +474,6 @@ export default function AdminEmployees() {
     }
   };
 
-  const handleAddUnit = async () => {
-    if (newUnitName) {
-      const unitData = {
-        id: editingUnitId || Date.now().toString(),
-        name: newUnitName
-      };
-
-      try {
-        const response = await fetch('/api/units', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(unitData),
-        });
-
-        if (response.ok) {
-          if (editingUnitId) {
-            const updatedUnits = units.map(u => u.id === editingUnitId ? unitData : u);
-            setUnits(updatedUnits);
-            toast.success("Unit Layanan berhasil diperbarui");
-          } else {
-            setUnits([...units, unitData]);
-            toast.success("Unit Layanan berhasil ditambahkan");
-          }
-          setIsAddUnitOpen(false);
-          setNewUnitName("");
-          setEditingUnitId(null);
-        } else {
-          toast.error("Gagal menyimpan Unit Layanan di server");
-        }
-      } catch (error) {
-        console.error("Error saving unit:", error);
-        toast.error("Terjadi kesalahan jaringan");
-      }
-    } else {
-      toast.error("Nama unit harus diisi");
-    }
-  };
-
-  const handleEditUnit = (unit: any) => {
-    setEditingUnitId(unit.id);
-    setNewUnitName(unit.name);
-    setIsAddUnitOpen(true);
-  };
-
-  const handleDeleteUnit = async (id: string) => {
-    try {
-      const response = await fetch(`/api/units/${id}`, {
-        method: 'DELETE',
-      });
-      if (response.ok) {
-        setUnits(units.filter(u => u.id !== id));
-        toast.success("Unit Layanan berhasil dihapus");
-      } else {
-        toast.error("Gagal menghapus Unit Layanan di server");
-      }
-    } catch (error) {
-      console.error("Error deleting unit:", error);
-      toast.error("Terjadi kesalahan jaringan");
-    }
-  };
-
   const handleAddShift = async () => {
     if (newShiftName && newShiftStart && newShiftEnd) {
       const shiftData = {
@@ -534,8 +489,7 @@ export default function AdminEmployees() {
         crossesMidnight: newShiftCrossesMidnight,
         isActive: newShiftIsActive,
         unit: newShiftUnit === "none" ? "" : newShiftUnit,
-        isOffSunday: newShiftIsOffSunday,
-        isOffHoliday: newShiftIsOffHoliday
+        allowHolidayCheckIn: newShiftAllowHolidayCheckIn
       };
       
       try {
@@ -583,8 +537,7 @@ export default function AdminEmployees() {
     setNewShiftCheckOutAfter(120);
     setNewShiftCrossesMidnight(false);
     setNewShiftIsActive(true);
-    setNewShiftIsOffSunday(false);
-    setNewShiftIsOffHoliday(false);
+    setNewShiftAllowHolidayCheckIn(false);
     setEditingShiftId(null);
   };
 
@@ -601,8 +554,7 @@ export default function AdminEmployees() {
     setNewShiftCrossesMidnight(shift.crossesMidnight);
     setNewShiftIsActive(shift.isActive);
     setNewShiftUnit(shift.unit || "none");
-    setNewShiftIsOffSunday(shift.isOffSunday || false);
-    setNewShiftIsOffHoliday(shift.isOffHoliday || false);
+    setNewShiftAllowHolidayCheckIn(shift.allowHolidayCheckIn || false);
     setEditingShiftId(shift.id);
     setIsAddShiftOpen(true);
   };
@@ -623,6 +575,61 @@ export default function AdminEmployees() {
       }
     } catch (error) {
       console.error("Error deleting shift:", error);
+      toast.error("Terjadi kesalahan jaringan");
+    }
+  };
+
+  const handleAddUnit = async () => {
+    if (newUnitName) {
+      const newUnit = {
+        id: Date.now().toString(),
+        name: newUnitName
+      };
+
+      try {
+        const response = await fetch('/api/units', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(newUnit),
+        });
+
+        if (response.ok) {
+          const updatedUnits = [...units, newUnit];
+          setUnits(updatedUnits);
+          localStorage.setItem('unitsData', JSON.stringify(updatedUnits));
+          toast.success("Unit Layanan berhasil ditambahkan");
+          setNewUnitName("");
+          setIsAddUnitOpen(false);
+        } else {
+          toast.error("Gagal menambahkan Unit Layanan ke server");
+        }
+      } catch (error) {
+        console.error("Error adding unit:", error);
+        toast.error("Terjadi kesalahan jaringan");
+      }
+    } else {
+      toast.error("Mohon lengkapi nama Unit Layanan");
+    }
+  };
+
+  const handleDeleteUnit = async (id: string) => {
+    try {
+      const response = await fetch(`/api/units/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        const updatedUnits = units.filter(unit => unit.id !== id);
+        setUnits(updatedUnits);
+        localStorage.setItem('unitsData', JSON.stringify(updatedUnits));
+        toast.success("Unit Layanan berhasil dihapus");
+      } else {
+        toast.error("Gagal menghapus Unit Layanan dari server");
+      }
+    } catch (error) {
+      console.error("Error deleting unit:", error);
       toast.error("Terjadi kesalahan jaringan");
     }
   };
@@ -932,6 +939,20 @@ export default function AdminEmployees() {
                       </Select>
                     </div>
                     <div className="space-y-2">
+                      <Label htmlFor="emp-office3">Alamat Kantor 3 (Opsional)</Label>
+                      <Select value={newEmpOffice3} onValueChange={setNewEmpOffice3}>
+                        <SelectTrigger id="emp-office3">
+                          <SelectValue placeholder="Pilih Alamat Kantor 3" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Tidak Ada</SelectItem>
+                          {locations.map(loc => (
+                            <SelectItem key={loc.id} value={loc.desa}>{loc.desa}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="emp-email">Email</Label>
                       <Input 
                         id="emp-email" 
@@ -968,6 +989,7 @@ export default function AdminEmployees() {
                         <TableHead>Unit Kerja</TableHead>
                         <TableHead>Alamat Kantor 1</TableHead>
                         <TableHead>Alamat Kantor 2</TableHead>
+                        <TableHead>Alamat Kantor 3</TableHead>
                         <TableHead>Email</TableHead>
                         <TableHead className="text-right">Aksi</TableHead>
                       </TableRow>
@@ -982,6 +1004,7 @@ export default function AdminEmployees() {
                           <TableCell>{emp.unit || "-"}</TableCell>
                           <TableCell>{emp.office}</TableCell>
                           <TableCell>{emp.office2 || "-"}</TableCell>
+                          <TableCell>{emp.office3 || "-"}</TableCell>
                           <TableCell>{emp.email}</TableCell>
                           <TableCell className="text-right">
                             <Button
@@ -1103,76 +1126,6 @@ export default function AdminEmployees() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="unit">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Daftar Unit Layanan</CardTitle>
-              <Dialog open={isAddUnitOpen} onOpenChange={setIsAddUnitOpen}>
-                <DialogTrigger render={
-                  <Button className="flex items-center gap-2">
-                    <Plus className="h-4 w-4" />
-                    Tambah Unit Layanan
-                  </Button>
-                } onClick={() => {
-                  setEditingUnitId(null);
-                  setNewUnitName("");
-                }} />
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>{editingUnitId ? 'Edit Unit Layanan' : 'Tambah Unit Layanan Baru'}</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="unit-name">Nama Unit Layanan</Label>
-                      <Input 
-                        id="unit-name" 
-                        placeholder="Contoh: Manajemen, UGD, Rawat Jalan" 
-                        value={newUnitName}
-                        onChange={(e) => setNewUnitName(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button onClick={handleAddUnit}>{editingUnitId ? 'Simpan Perubahan' : 'Simpan'}</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nama Unit Layanan</TableHead>
-                      <TableHead className="text-right">Aksi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {units.map((unit) => (
-                      <TableRow key={unit.id}>
-                        <TableCell className="font-medium">{unit.name}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" onClick={() => handleEditUnit(unit)}>Edit</Button>
-                          <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => handleDeleteUnit(unit.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {units.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={2} className="text-center py-6 text-slate-500">
-                          Belum ada data Unit Layanan
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="shift">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -1275,7 +1228,7 @@ export default function AdminEmployees() {
                           <SelectContent>
                             <SelectItem value="none">Pilih Unit (Opsional)</SelectItem>
                             {units.map((unit) => (
-                              <SelectItem key={unit.id} value={unit.name}>{unit.name}</SelectItem>
+                               <SelectItem key={unit.id} value={unit.name}>{unit.name}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1293,34 +1246,26 @@ export default function AdminEmployees() {
                       </Label>
                     </div>
                     <div className="flex items-center space-x-2 pt-2">
-                      <Checkbox 
-                        id="shift-is-active" 
-                        checked={newShiftIsActive}
-                        onCheckedChange={(checked) => setNewShiftIsActive(checked as boolean)}
-                      />
-                      <Label htmlFor="shift-is-active" className="text-sm font-normal">
-                        Aktifkan Shift
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2 pt-2">
-                      <Checkbox 
-                        id="shift-off-sunday" 
-                        checked={newShiftIsOffSunday}
-                        onCheckedChange={(checked) => setNewShiftIsOffSunday(checked as boolean)}
-                      />
-                      <Label htmlFor="shift-off-sunday" className="text-sm font-normal">
-                        Libur pada hari Minggu (Tidak bisa absen masuk)
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2 pt-2">
-                      <Checkbox 
-                        id="shift-off-holiday" 
-                        checked={newShiftIsOffHoliday}
-                        onCheckedChange={(checked) => setNewShiftIsOffHoliday(checked as boolean)}
-                      />
-                      <Label htmlFor="shift-off-holiday" className="text-sm font-normal">
-                        Libur pada Hari Libur Nasional (Tidak bisa absen masuk)
-                      </Label>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox 
+                          id="shift-is-active" 
+                          checked={newShiftIsActive}
+                          onCheckedChange={(checked) => setNewShiftIsActive(checked as boolean)}
+                        />
+                        <Label htmlFor="shift-is-active" className="text-sm font-normal">
+                          Aktifkan Shift
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox 
+                          id="allow-holiday-checkin" 
+                          checked={newShiftAllowHolidayCheckIn}
+                          onCheckedChange={(checked) => setNewShiftAllowHolidayCheckIn(checked as boolean)}
+                        />
+                        <Label htmlFor="allow-holiday-checkin" className="text-sm font-normal">
+                          Perbolehkan Absen Masuk Saat Hari Libur/Minggu
+                        </Label>
+                      </div>
                     </div>
                   </div>
                   <DialogFooter>
@@ -1375,11 +1320,6 @@ export default function AdminEmployees() {
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${shift.isActive ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'}`}>
                               {shift.isActive ? 'Aktif' : 'Nonaktif'}
                             </span>
-                            {(shift.isOffSunday || shift.isOffHoliday) && (
-                              <div className="mt-1 text-[10px] text-slate-500">
-                                Libur: {[shift.isOffSunday ? "Minggu" : null, shift.isOffHoliday ? "Libnas" : null].filter(Boolean).join(", ")}
-                              </div>
-                            )}
                           </TableCell>
                           <TableCell className="text-right space-x-1">
                             <Button
@@ -1403,6 +1343,75 @@ export default function AdminEmployees() {
                               size="icon" 
                               className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
                               onClick={() => handleDeleteShift(shift.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+      <TabsContent value="unit">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Unit Layanan</CardTitle>
+              <Dialog open={isAddUnitOpen} onOpenChange={setIsAddUnitOpen}>
+                <DialogTrigger render={
+                  <Button className="flex items-center gap-2">
+                    <Plus className="h-4 w-4" />
+                    Tambah Unit Layanan
+                  </Button>
+                } />
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Tambah Unit Layanan Baru</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="unit-name">Nama Unit Layanan</Label>
+                      <Input 
+                        id="unit-name" 
+                        placeholder="Contoh: Poli Umum" 
+                        value={newUnitName}
+                        onChange={(e) => setNewUnitName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsAddUnitOpen(false)}>Batal</Button>
+                    <Button onClick={handleAddUnit}>Simpan ke Database</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
+            <CardContent>
+              {units.length === 0 ? (
+                <div className="text-center py-10 text-slate-500">Belum ada unit layanan.</div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nama Unit Layanan</TableHead>
+                        <TableHead className="text-right">Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {units.map((unit) => (
+                        <TableRow key={unit.id}>
+                          <TableCell className="font-medium">{unit.name}</TableCell>
+                          <TableCell className="text-right">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => handleDeleteUnit(unit.id)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
