@@ -498,9 +498,12 @@ export default function UserHome() {
             setIsHolidayOff(false);
             if (diffMs > 0) {
               setCanCheckIn(false);
-              const hours = Math.floor(diffMs / (1000 * 60 * 60));
-              const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-              const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+              
+              // Calculate countdown to shift start instead of check-in open
+              const shiftStartDiffMs = upcomingShiftStart.getTime() - now.getTime();
+              const hours = Math.floor(shiftStartDiffMs / (1000 * 60 * 60));
+              const minutes = Math.floor((shiftStartDiffMs % (1000 * 60 * 60)) / (1000 * 60));
+              const seconds = Math.floor((shiftStartDiffMs % (1000 * 60)) / 1000);
               setCheckInCountdown(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
             } else {
               setCanCheckIn(true);
@@ -1186,7 +1189,7 @@ export default function UserHome() {
                   <Alert className="bg-teal-50 dark:bg-teal-950/50 border-teal-200 dark:border-teal-900 text-teal-700 dark:text-teal-400">
                     <AlertDescription className="text-center">
                       <p className="mb-2">Shift berikutnya: <strong>{nextShift?.name} ({nextShift?.startTime})</strong></p>
-                      <p className="text-xs mb-1">Waktu menuju pembukaan absen masuk:</p>
+                      <p className="text-xs mb-1">Waktu menuju shift dimulai:</p>
                       <p className="text-3xl font-mono font-bold tracking-wider text-slate-800 dark:text-teal-100">{checkInCountdown}</p>
                     </AlertDescription>
                   </Alert>

@@ -6,6 +6,6 @@ export async function syncServerTime(): Promise<boolean> {
   return true;
 }
 
-export function getServerTime(): number {
-  return Date.now();
+export function getServerTime(): Date {
+  return new Date();
 }
