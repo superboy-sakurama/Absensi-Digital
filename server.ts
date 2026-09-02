@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import { fileURLToPath } from 'url';
+
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { Resend } from 'resend';
@@ -16,6 +16,26 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Middleware to fix Vercel rewrite issues
+app.use((req, res, next) => {
+  if (req.query.__vercel_path) {
+    const originalPath = req.query.__vercel_path as string;
+    delete req.query.__vercel_path;
+    
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(req.query)) {
+      if (Array.isArray(value)) {
+        value.forEach(v => queryParams.append(key, String(v)));
+      } else {
+        queryParams.append(key, String(value));
+      }
+    }
+    const queryString = queryParams.toString();
+    req.url = '/api/' + originalPath + (queryString ? '?' + queryString : '');
+  }
+  next();
+});
 
   // Mock Database (In-Memory for Prototype)
   const db = {
