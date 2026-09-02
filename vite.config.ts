@@ -9,38 +9,7 @@ export default defineConfig(({mode}) => {
   return {
     plugins: [
       react(),
-      tailwindcss(),
-      VitePWA({
-        registerType: 'autoUpdate',
-        injectRegister: 'auto',
-        workbox: {
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024 // 5MB
-        },
-        devOptions: {
-          enabled: true
-        },
-        manifest: {
-          name: 'e-Pusla App',
-          short_name: 'e-Pusla',
-          theme_color: '#14b8a6',
-          display: 'standalone',
-          start_url: '/',
-          icons: [
-            {
-              src: '/logo.png',
-              sizes: '192x192',
-              type: 'image/png',
-              purpose: 'any maskable'
-            },
-            {
-              src: '/logo.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any maskable'
-            }
-          ]
-        }
-      })
+      tailwindcss()
     ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
