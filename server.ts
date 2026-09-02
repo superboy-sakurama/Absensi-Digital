@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-
+import { fileURLToPath } from 'url';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { Resend } from 'resend';
@@ -10,32 +10,13 @@ import { Resend } from 'resend';
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 const app = express();
+export default app;
 
 const PORT = 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
-// Middleware to fix Vercel rewrite issues
-app.use((req, res, next) => {
-  if (req.query.__vercel_path) {
-    const originalPath = req.query.__vercel_path as string;
-    delete req.query.__vercel_path;
-    
-    const queryParams = new URLSearchParams();
-    for (const [key, value] of Object.entries(req.query)) {
-      if (Array.isArray(value)) {
-        value.forEach(v => queryParams.append(key, String(v)));
-      } else {
-        queryParams.append(key, String(value));
-      }
-    }
-    const queryString = queryParams.toString();
-    req.url = '/api/' + originalPath + (queryString ? '?' + queryString : '');
-  }
-  next();
-});
 
   // Mock Database (In-Memory for Prototype)
   const db = {
@@ -1878,12 +1859,5 @@ app.use((req, res, next) => {
     res.json({ success: true, message: 'Pengaturan berhasil disimpan' });
   });
 
-  // Global error handler to ensure JSON responses for unhandled errors
-  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error('Unhandled Server Error:', err);
-    res.status(500).json({ success: false, message: 'Terjadi kesalahan sistem backend.' });
-  });
-
   // NOTE: Static file serving and app.listen have been moved to start.ts
   // This allows Vercel to import this file directly without starting a server.
-export default app;
