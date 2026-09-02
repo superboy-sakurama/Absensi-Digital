@@ -1858,6 +1858,12 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
     res.json({ success: true, message: 'Pengaturan berhasil disimpan' });
   });
 
+  // Global error handler to ensure JSON responses for unhandled errors
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Unhandled Server Error:', err);
+    res.status(500).json({ success: false, message: 'Terjadi kesalahan sistem backend.' });
+  });
+
   // NOTE: Static file serving and app.listen have been moved to start.ts
   // This allows Vercel to import this file directly without starting a server.
 export default app;
