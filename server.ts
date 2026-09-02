@@ -415,89 +415,103 @@ initSpreadsheet();
 
   // --- Auth API ---
   app.post('/api/login', async (req, res) => {
-    const nip = (req.body.nip || '').trim();
-    const password = (req.body.password || '').trim();
-    console.log(`Login attempt for NIP: ${nip}`);
-    
-    let user = null;
-    if (doc) {
-      try {
-        // Check Admins first
-        const adminSheet = await getSheet('Admins');
-        if (adminSheet) {
-          const rows = await adminSheet.getRows();
-          const row = rows.find(r => String(r.get('nip') || '').trim() === nip && String(r.get('password') || '').trim() === password && String(r.get('isActive')).trim().toLowerCase() === 'true');
-          if (row) {
-            let access = [];
-            try {
-              access = JSON.parse(row.get('access'));
-            } catch (e) {}
-            user = { 
-              id: row.get('id'), 
-              nip: String(row.get('nip') || '').trim(), 
-              name: row.get('name'), 
-              role: 'admin',
-              group: row.get('group'),
-              access
-            };
-            console.log('Admin found:', user.name);
-          }
-        }
-
-        // If not admin, check Users
-        if (!user) {
-          const userSheet = await getSheet('Users');
-          if (userSheet) {
-            const rows = await userSheet.getRows();
-            const row = rows.find(r => String(r.get('nip') || '').trim() === nip && String(r.get('password') || '').trim() === password);
+    try {
+      const nip = String(req.body?.nip || '').trim();
+      const password = String(req.body?.password || '').trim();
+      console.log(`Login attempt for NIP: ${nip}`);
+      
+      let user = null;
+      if (doc) {
+        try {
+          // Check Admins first
+          const adminSheet = await getSheet('Admins');
+          if (adminSheet) {
+            const rows = await adminSheet.getRows();
+            const row = rows.find(r => String(r.get('nip') || '').trim() === nip && String(r.get('password') || '').trim() === password && String(r.get('isActive')).trim().toLowerCase() === 'true');
             if (row) {
-              user = { id: row.get('id'), nip: String(row.get('nip') || '').trim(), name: row.get('name'), role: row.get('role'), office: row.get('office'), office2: row.get('office2'), office3: row.get('office3'), unit: row.get('unit') || '' };
-              console.log('User found:', user.name);
+              let access = [];
+              try {
+                access = JSON.parse(row.get('access'));
+              } catch (e) {}
+              user = { 
+                id: row.get('id'), 
+                nip: String(row.get('nip') || '').trim(), 
+                name: row.get('name'), 
+                role: 'admin',
+                group: row.get('group'),
+                access
+              };
+              console.log('Admin found:', user.name);
+            }
+          }
+
+          // If not admin, check Users
+          if (!user) {
+            const userSheet = await getSheet('Users');
+            if (userSheet) {
+              const rows = await userSheet.getRows();
+              const row = rows.find(r => String(r.get('nip') || '').trim() === nip && String(r.get('password') || '').trim() === password);
+              if (row) {
+                user = { 
+                  id: row.get('id'), 
+                  nip: String(row.get('nip') || '').trim(), 
+                  name: row.get('name'), 
+                  role: row.get('role'), 
+                  office: row.get('office'), 
+                  office2: row.get('office2') || '', 
+                  office3: row.get('office3') || '', 
+                  unit: row.get('unit') || '' 
+                };
+                console.log('User found:', user.name);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error logging in from spreadsheet:', error);
+          // Add more context to the error
+          console.error('Spreadsheet configuration might be invalid or sheet missing.');
+        }
+      }
+      
+      if (!user) {
+        user = db.users.find(u => u.nip === nip && u.password === password);
+        if (user) console.log('User found in mock DB:', user.name);
+      }
+
+      if (user) {
+        if (user.role !== 'admin') {
+          const deviceId = req.body?.deviceId;
+          if (deviceId && doc) {
+            try {
+              const deviceSheet = await getOrCreateSheet('DeviceBindings', ['nip', 'deviceId']);
+              if (deviceSheet) {
+                const rows = await deviceSheet.getRows();
+                const existingDeviceRow = rows.find(r => r.get('deviceId') === deviceId);
+                if (existingDeviceRow && String(existingDeviceRow.get('nip')) !== String(nip)) {
+                  return res.status(403).json({ success: false, message: 'Perangkat ini sudah digunakan oleh akun lain. Silahkan hubungi Admin untuk mereset perangkat jika fitur ini bermasalah.' });
+                }
+
+                const existingNipRow = rows.find(r => String(r.get('nip')) === String(nip));
+                if (existingNipRow && existingNipRow.get('deviceId') !== deviceId) {
+                  return res.status(403).json({ success: false, message: 'Akun Anda terdaftar di perangkat lain. Untuk pengguna iOS/iPhone yang baru menginstall ke Layar Utama, layar utama dianggap sebagai perangkat baru. Silahkan minta Admin untuk mereset perangkat Anda di menu Karyawan.' });
+                }
+
+                if (!existingDeviceRow && !existingNipRow) {
+                  await deviceSheet.addRow({ nip, deviceId });
+                }
+              }
+            } catch (error) {
+              console.error('Error verifying device binding:', error);
             }
           }
         }
-      } catch (error) {
-        console.error('Error logging in from spreadsheet:', error);
-        // Add more context to the error
-        console.error('Spreadsheet configuration might be invalid or sheet missing.');
+        res.json({ success: true, user });
+      } else {
+        res.status(401).json({ success: false, message: 'NIP atau Password salah' });
       }
-    }
-    
-    if (!user) {
-      user = db.users.find(u => u.nip === nip && u.password === password);
-      if (user) console.log('User found in mock DB:', user.name);
-    }
-
-    if (user) {
-      if (user.role !== 'admin') {
-        const deviceId = req.body.deviceId;
-        if (deviceId && doc) {
-          try {
-            const deviceSheet = await getOrCreateSheet('DeviceBindings', ['nip', 'deviceId']);
-            if (deviceSheet) {
-              const rows = await deviceSheet.getRows();
-              const existingDeviceRow = rows.find(r => r.get('deviceId') === deviceId);
-              if (existingDeviceRow && String(existingDeviceRow.get('nip')) !== String(nip)) {
-                return res.status(403).json({ success: false, message: 'Perangkat ini sudah digunakan oleh akun lain. Silahkan hubungi Admin untuk mereset perangkat jika fitur ini bermasalah.' });
-              }
-
-              const existingNipRow = rows.find(r => String(r.get('nip')) === String(nip));
-              if (existingNipRow && existingNipRow.get('deviceId') !== deviceId) {
-                return res.status(403).json({ success: false, message: 'Akun Anda terdaftar di perangkat lain. Untuk pengguna iOS/iPhone yang baru menginstall ke Layar Utama, layar utama dianggap sebagai perangkat baru. Silahkan minta Admin untuk mereset perangkat Anda di menu Karyawan.' });
-              }
-
-              if (!existingDeviceRow && !existingNipRow) {
-                await deviceSheet.addRow({ nip, deviceId });
-              }
-            }
-          } catch (error) {
-            console.error('Error verifying device binding:', error);
-          }
-        }
-      }
-      res.json({ success: true, user });
-    } else {
-      res.status(401).json({ success: false, message: 'NIP atau Password salah' });
+    } catch (globalError) {
+      console.error('Unhandled error during login:', globalError);
+      res.status(500).json({ success: false, message: 'Terjadi kesalahan sistem saat login.' });
     }
   });
 
