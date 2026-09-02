@@ -10,7 +10,6 @@ import { Resend } from 'resend';
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 const app = express();
-export default app;
 
 const PORT = 3000;
 
@@ -1861,3 +1860,4 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // NOTE: Static file serving and app.listen have been moved to start.ts
   // This allows Vercel to import this file directly without starting a server.
+export default app;

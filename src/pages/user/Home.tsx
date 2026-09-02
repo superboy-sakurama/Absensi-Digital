@@ -20,13 +20,20 @@ import { getServerTime } from '@/lib/time';
 const resolveActiveShifts = (shifts: any[], user?: any, employees: any[] = []) => {
   const fullUser = user?.nip ? employees.find(e => e.nip === user.nip) || user : user;
   const activeShiftsRaw = shifts.filter(s => s.isActive);
-  const specificShifts = activeShiftsRaw.filter(s => s.unit && fullUser && s.unit === fullUser.unit);
+  
+  if (!fullUser || !fullUser.unit || fullUser.unit === 'none' || fullUser.unit === '') {
+     return activeShiftsRaw.filter(s => !s.unit || s.unit === 'none' || s.unit === '');
+  }
+  
+  const specificShifts = activeShiftsRaw.filter(s => s.unit === fullUser.unit);
   const generalShifts = activeShiftsRaw.filter(s => !s.unit || s.unit === 'none' || s.unit === '');
   
-  if (specificShifts.length > 0) {
-    return specificShifts;
-  }
-  return generalShifts;
+  // Kombinasikan shift spesifik unit dengan shift general. 
+  // Jika ada shift spesifik dengan nama yang sama (misal "Pagi"), maka override shift general.
+  const specificShiftNames = specificShifts.map(s => s.name.toLowerCase().trim());
+  const filteredGeneralShifts = generalShifts.filter(s => !specificShiftNames.includes(s.name.toLowerCase().trim()));
+  
+  return [...specificShifts, ...filteredGeneralShifts];
 };
 
 export default function UserHome() {
